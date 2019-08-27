@@ -190,9 +190,9 @@ class ROFinder(object):
         if len(ro_segments) < 2:
             return None
         else:
-            all_consenses = MSA(ro_seqs)
-            ccs = sorted([''.join(x[1]) for x in all_consenses], key=lambda x: len(x), reverse=True)[0]
-            return ccs
+            # all_consenses = MSA(ro_seqs)
+            # ccs = sorted([''.join(x[1]) for x in all_consenses], key=lambda x: len(x), reverse=True)[0]
+            return ro_seqs
 
 
 def trim_sequence(seq, primer = 'AAGCAGTGGTATCAACGCAGAGTAC'):
@@ -290,7 +290,8 @@ def blast_search(seq):
 
         if len(extended_seed) >= 2:
             seqs = [('{}-{}'.format(start, end), seq[start:end]) for (start, end) in extended_seed]
-            ccs = MSA(seqs)
+            # ccs = MSA(seqs)
+            ccs = seqs
         else:
             ccs = None
     except IndexError as e:
@@ -307,6 +308,8 @@ def worker1(seq):
 
 def worker2(seq):
     trimmed_seq = trim_sequence(seq)
+    if len(trimmed_seq) == 0:
+        return None
     return blast_search(trimmed_seq)
 
 
@@ -339,7 +342,7 @@ def main():
         #             continue
         #         cand_seqs[x.query_name] = x.query_sequence
         import gzip
-        pool = Pool(6)
+        pool = Pool(4)
         jobs = []
 
         total_cnt = 0
@@ -351,7 +354,7 @@ def main():
             separator = fastq.readline()
             qual = fastq.readline()
 
-            jobs.append(pool.apply_async(worker2, (seq, )))
+            jobs.append(pool.apply_async(worker1, (seq, )))
         pool.close()
 
         read_cnt = 0
