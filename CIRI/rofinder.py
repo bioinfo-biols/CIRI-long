@@ -459,9 +459,6 @@ def main():
             jobs.append(pool.apply_async(worker, (chunk, )))
         pool.close()
 
-        # read_cnt = 0
-        # ro_cnt = 0
-
         prog = ProgressBar()
         prog.update(0)
         finished_chunk = 0
