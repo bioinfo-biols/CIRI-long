@@ -431,6 +431,8 @@ def main():
                         help='Input directory, default: ./', )
     parser.add_argument('-o', '--out', dest='output', metavar='DIR', default=None,
                         help='Output directory, default: ./', )
+    parser.add_argument('-t', '--threads', dest='threads', metavar='INT', default=os.cpu_count(),
+                        help='Number of threads', )
     args = parser.parse_args()
 
     import subprocess
