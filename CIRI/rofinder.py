@@ -462,7 +462,7 @@ def main():
         #             continue
         #         cand_seqs[x.query_name] = x.query_sequence
         import gzip
-        pool = Pool(4)
+        pool = Pool(args.threads)
         jobs = []
 
         total_cnt = 0
