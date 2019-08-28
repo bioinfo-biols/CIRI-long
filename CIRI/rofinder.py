@@ -124,7 +124,14 @@ class ROFinder(object):
         """Find Reverse Overlap Regions"""
         ro_paths = {}
         idx = self._len
-        while idx > 0:
+        tmp_score = self.mtx[idx][self._len]
+
+        while idx > 1:
+            if self.mtx[idx][self._len] < tmp_score or self.mtx[idx - 1][self._len] > self.mtx[idx][self._len]:
+                tmp_score = self.mtx[idx, self._len]
+                idx -= 1
+                continue
+
             tmp_path = self.recursive_path(idx, self._len)
             idx -= 1
             if len(tmp_path) < 15:
@@ -142,12 +149,19 @@ class ROFinder(object):
     def iter_ro_paths(self):
         last_path = [i for i in self.iter_paths(self._len, self._len)]
         last_score = last_path[0].score
+        tmp_score = last_score
         ro_paths = []
         idx = self._len - 1
 
         while idx > 0:
             tmp_path = []
             is_update = 0
+
+            if self.mtx[idx, self._len] < tmp_score or self.mtx[idx - 1, self._len] > self.mtx[idx, self._len]:
+                tmp_score = self.mtx[idx, self._len]
+                idx -= 1
+                continue
+
             for node in self.iter_paths(idx, self._len):
                 tmp_path.append(node)
                 if node not in last_path:
@@ -172,6 +186,8 @@ class ROFinder(object):
                 ro_paths.append(last_path)
                 last_path = tmp_path
                 last_score = tmp_path[0].score
+
+            tmp_score = self.mtx[idx, self._len]
             idx -= 1
 
         ro_paths.append(last_path)
@@ -260,7 +276,7 @@ class ROFinder(object):
 
     def consensus(self):
         """Generate consensus sequence using RO features"""
-        # ro_paths = self.find_ro_paths()
+        # ro_paths = self.iter_ro_paths()
         ro_paths = self.find_ro_paths()
         merged_paths = self.merge_ro_paths(ro_paths)
         filtered_paths = self.filter_ro_paths(merged_paths)
@@ -393,7 +409,7 @@ def worker(chunk):
 
 def worker1(seq):
     trimmed_seq = trim_sequence(seq)
-    if len(trimmed_seq) == 0:
+    if len(trimmed_seq) < 50:
         return None, None
     ro_finer = ROFinder(trimmed_seq)
     return ro_finer.consensus()
@@ -407,11 +423,19 @@ def worker2(seq):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(prog='CIRI-long')
+
+    # required arguments
+    parser.add_argument('-i', '--in', dest='input', metavar='DIR', default=None,
+                        help='Input directory, default: ./', )
+    parser.add_argument('-o', '--out', dest='output', metavar='DIR', default=None,
+                        help='Output directory, default: ./', )
+    args = parser.parse_args()
+
     import subprocess
     from multiprocessing import Pool
     chunk_size = 250
-    data_dir = '/home/zhangjy/03.CIRIpacbio/1908_Nanopore/alignment/'
-    fq_dir = '/home/zhangjy/03.CIRIpacbio/1908_Nanopore/fastq'
     for sample in 'barcode20', 'barcode21', 'barcode22':
         print('Loading {}'.format(sample))
         # wc_results = subprocess.getoutput('wc -l {}/RO_reads/{}_aligned_reads.list'.format(data_dir, sample))
@@ -440,7 +464,7 @@ def main():
         jobs = []
 
         total_cnt = 0
-        fastq = gzip.open('{}/{}.fq.gz'.format(fq_dir, sample))
+        fastq = gzip.open('{}/{}.fq.gz'.format(args.input, sample))
 
         chunk = []
         chunk_cnt = 0
@@ -464,7 +488,7 @@ def main():
         finished_chunk = 0
         total_reads = 0
         ro_reads = 0
-        with open('/home/zhangjy/03.CIRIpacbio/1908_Nanopore/CIRI-long/{}.info'.format(sample), 'w') as out:
+        with open('{}/{}.info'.format(args.output, sample), 'w') as out:
             for job in jobs:
                 ret = job.get()
                 for header, segments, ccs in ret:
