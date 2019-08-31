@@ -1,25 +1,32 @@
 #!/home/zhangjy/.virtualenvs/Benchmarking/bin/python
-import argparse
+import os
 import sys
-
-from CIRI import assemble
+import argparse
+from logger import get_logger
 
 
 def main():
+    from rofinder import find_ccs_reads
     parser = argparse.ArgumentParser()
-    parser.add_argument('infile', nargs='?', type=argparse.FileType('r'), default=sys.stdin)
-    # parser.add_argument('-G', '--gap', type=int, default=-2, help='Gap penalty, default=-1')
-    # parser.add_argument('-g', '--globalAlign', action='store_true', help='Global alignment (default: local)')
+    parser.add_argument('-i', '--in', dest='input', metavar='READS', required=True,
+                        help='Input reads.fq.gz', )
+    parser.add_argument('-o', '--out', dest='output', metavar='CCS', required=True,
+                        help='Output reads info', )
+    parser.add_argument('-t', '--threads', dest='threads', metavar='INT', default=os.cpu_count(),
+                        help='Number of threads', )
     args = parser.parse_args()
 
-    fasta = args.infile
+    logger = get_logger('CIRI-long')
+    logger.info('Input reads: ' + os.path.basename(args.input))
+    logger.info('Output CCS reads: ' + os.path.basename(args.output))
+    logger.info('Multi threads: {}'.format(args.threads))
 
-    fasta = '/home/zhangjy/Data/PROJECT/01.Benchmarking_Study/pacbio/m54148_190411_071934.ccs.fasta.gz'
-    # fasta = '/home/zhangjy/git/CIRI-PacBio/test_data/m54148_190408_064610.ccs.fasta.gz'
-    # fasta = '/home/zhangjy/git/CIRI-PacBio/test_data/BSJ.fa.gz'
+    in_file = args.input
+    out_file = args.output
+    threads = int(args.threads)
 
-    ccs_reads = assemble.circularize(fasta)
-    print(len(ccs_reads))
+    total_reads, ro_reads = find_ccs_reads(in_file, out_file, threads)
+    logger.info('Total Reads: {}, RO reads: {}'.format(total_reads, ro_reads))
 
 
 if __name__ == '__main__':
