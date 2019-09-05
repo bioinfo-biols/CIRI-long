@@ -33,4 +33,3 @@ def partial_order_alignment(fasta, match=2, mismatch=-3, gap=-2, globalAlign=0, 
                                                     gapscore=gap)
     graph.incorporateSeqAlignment(alignment, fasta[-1][1], fasta[-1][0])
     return graph
-

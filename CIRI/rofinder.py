@@ -105,6 +105,7 @@ def ROF(seq, k=11, p_match=0.8, p_indel=0.1, d_min=40, support_min=10):
             continue
         cand_junc.append(valid_s)
 
+
     if len(cand_junc) == 0:
         return None
 
@@ -247,6 +248,7 @@ def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
                     continue
                 ro_reads += 1
                 out.write('>{}\t{}\t{}\n{}\n'.format(header, segments, len(ccs), ccs))
+
             finished_chunk += 1
             prog.update(100 * finished_chunk // chunk_cnt)
     prog.update(100)
