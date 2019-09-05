@@ -1,10 +1,25 @@
+import os
+import sys
 import itertools
-from datetime import datetime
 
 
-def log(text):
-    time_stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print('{} - {}'.format(time_stamp, text))
+def check_file(file_name):
+    if os.path.exists(file_name) and os.path.isfile(file_name):
+        return os.path.abspath(file_name)
+    else:
+        sys.exit('File: {}, not found'.format(file_name))
+
+
+def check_dir(dir_name):
+    if os.path.exists(dir_name):
+        if os.path.isdir(dir_name):
+            # Output directory already exists
+            pass
+        else:
+            sys.exit('Directory: {}, clashed with existed files'.format(dir_name))
+    else:
+        os.mkdir(dir_name)
+    return os.path.abspath(dir_name)
 
 
 def to_str(bytes_or_str):

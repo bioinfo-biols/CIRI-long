@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# TODO: add affine gap penalty for multiple sequence alignment
 from __future__ import print_function
 try:
     from builtins import range

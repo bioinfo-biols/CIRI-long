@@ -1,376 +1,255 @@
-import os
-import sys
-import time
 import numpy as np
-from functools import cmp_to_key
-from collections import namedtuple
-
-import pysam
-import poagraph
-import seqgraphalignment
-import mappy as mp
-from Levenshtein import distance
-from skbio import DNA
-from skbio.alignment import local_pairwise_align_ssw
-
-Node = namedtuple('path', 'row col score')
-SCORE = {
-    'A': {'A': 10, 'G': -5, 'C': -7, 'T': -7},
-    'G': {'A': -5, 'G': 10, 'C': -7, 'T': -7},
-    'C': {'A': -7, 'G': -7, 'C': 10, 'T': -5},
-    'T': {'A': -7, 'G': -7, 'C': -5, 'T': 10},
-}
+from skbio import DNA, local_pairwise_align_ssw
+from collections import namedtuple, defaultdict
 
 
-class ProgressBar(object):
-    def __init__(self, width=50):
-        self.last_x = -1
-        self.width = width
+def find_consensus(header, seq, out_dir, debugging):
+    from preprocess import trim_primer, partial_order_alignment
 
-    def update(self, x):
-        assert 0 <= x <= 100
-        if self.last_x == int(x):
-            return
-        self.last_x = int(x)
-        p = int(self.width * (x / 100.0))
-        time_stamp = time.strftime("[%a %Y-%m-%d %H:%M:%S]", time.localtime())
-        sys.stderr.write('\r%s [%-5s] [%s]' % (time_stamp, str(int(x)) + '%', '#' * p + '.' * (self.width - p)))
-        sys.stderr.flush()
-        if x == 100:
-            sys.stderr.write('\n')
+    # Trim sequence
+    trimmed_seq = trim_primer(seq)
+    if len(trimmed_seq) <= 50:
+        return None, None
 
+    if header == '62117b92-99ad-45b7-8a7e-7915da2ad2f8':
+        print(1)
 
-class ROFinder(object):
-    def __init__(self, sequence, match=10, mismatch=-3, gap=-5, local_alignment=True):
-        self.sequence = sequence
-        self._match = 10
-        self._mismatch = -3
-        self._gap = -5
-        self._len = len(sequence)
-        self.localAlignment = local_alignment
-        # Init matrix
-        self.init_mtx()
+    junc_sites = ROF(trimmed_seq)
+    if junc_sites is None:
+        return None, None
 
-    def init_mtx(self):
-        """Init scoring matrix"""
-        self.mtx = np.zeros((self._len + 1, self._len + 1))
-        for i in range(self._len + 1):
-            self.mtx[0][i] = 0 if self.localAlignment is True else self._gap * i
+    fasta = [('{}-{}'.format(i, j), trimmed_seq[i:j]) for i, j in zip(junc_sites[:-1], junc_sites[1:])]
 
-        # For a symmetric matrix, only the upper half is computed
-        for i in range(1, self._len + 1):
-            for j in range(i, self._len + 1):
-                self.mtx[i][j] = max(
-                    self.mtx[i - 1][j - 1] + SCORE[self.sequence[i - 1]][self.sequence[j - 1]],
-                    self.mtx[i - 1][j] + self._gap,
-                    self.mtx[i][j - 1] + self._gap,
-                )
-                if self.localAlignment is True:
-                    self.mtx[i][j] = max(self.mtx[i][j], 0)
+    poa_graph = partial_order_alignment(fasta)
+    ccs_reads = [''.join(i[1]) for i in poa_graph.allConsenses()]
 
-    def symmetrize(self):
-        """Symmetric the full matrix
+    if debugging is True:
+        alignments = poa_graph.generateAlignmentStrings()
+        with open('{}/tmp/{}.msa'.format(out_dir, header), 'w') as out:
+            for label, alignstring in alignments:
+                out.write("{0:15s} {1:s}\n".format(label, alignstring))
+        with open('{}/tmp/{}.fa'.format(out_dir, header), 'w') as out:
+            for label, sequence in fasta:
+                out.write('>{}\n{}\n'.format(label, sequence))
 
-        Return: symmetrized scoring matrix
-        """
-        return self.mtx + self.mtx.T - np.diag(self.mtx.diagonal())
-
-    @staticmethod
-    def cmp_parent(a, b):
-        if a[0] == b[0]:
-            # Proprity From small to large
-            return b[3] - a[3]
-        else:
-            # Score from large to small
-            return a[0] - b[0]
-
-    def recursive_path(self, i, j):
-        """Recursive find path
-        Input:
-            i: index of row, j: index of col
-        Return:
-            path of best alignment
-        """
-        if i is None and j is None:
-            return []
-        elif i == 0:
-            return [Node(i, j, self.mtx[i][j]), ]
-        else:
-            pass
-
-        parents = [
-            (self.mtx[i - 1][j - 1] + SCORE[self.sequence[i - 1]][self.sequence[j - 1]], i - 1, j - 1, 1),
-            (self.mtx[i - 1][j] + self._gap, i - 1, j, 2),
-            (self.mtx[i][j - 1] + self._gap, i, j - 1, 3),
-        ]
-        if self.localAlignment:
-            parents.append((0, None, None, 4))
-
-        l_score, l_row, l_col, l_priority = sorted(parents, key=cmp_to_key(self.cmp_parent), reverse=True)[0]
-        return self.recursive_path(l_row, l_col) + [Node(i, j, self.mtx[i][j]), ]
-
-    def find_ro_paths(self):
-        """Find Reverse Overlap Regions"""
-        ro_paths = {}
-        idx = self._len
-        while idx > 0:
-            tmp_path = self.recursive_path(idx, self._len)
-            idx -= 1
-            if len(tmp_path) < 15:
-                continue
-
-            s_node, e_node = tmp_path[0], tmp_path[-1]
-            # Path start at head line
-            if s_node.row != 0:
-                continue
-            if s_node.col not in ro_paths or ro_paths[s_node.col].score < e_node.score:
-                ro_paths[s_node.col] = e_node
-
-        return ro_paths
-
-    @staticmethod
-    def merge_ro_paths(ro_paths):
-        """Merge RO paths
-
-        Input:
-            ro_paths: list
-
-        Return:
-            merged_paths: list
-        """
-        tmp_site = 0
-        ro_sects = [[], ]
-        for i in sorted(list(ro_paths)):
-            if i > tmp_site + 20:
-                ro_sects.append([i, ])
-            else:
-                ro_sects[-1].append(i)
-            tmp_site = i
-
-        merged_paths = {}
-        for cols in ro_sects:
-            col = sorted(cols, key=lambda x: ro_paths[x].score)[-1]
-            merged_paths[col] = ro_paths[col]
-
-        return merged_paths
-
-    def filter_ro_paths(self, ro_paths):
-        if len(ro_paths) <= 2:
-            return ro_paths
-
-        cols = sorted(list(ro_paths))
-        kmers = [self.sequence[i:i + 11] for i in cols]
-
-        valid_paths = []
-        for col, kmer in zip(cols, kmers):
-            if col == 0 or distance(kmer, kmers[0]) <= 3:
-                valid_paths.append((col, ro_paths[col]))
-        return valid_paths
-
-    def circular_segments(self, ro_paths):
-        segments = []
-        divs = sorted(list(ro_paths))
-        for i, x in enumerate(divs):
-            if i < len(divs) - 1:
-                segments.append((x[0], divs[i + 1][0]))
-            else:
-                segments.append((x[0], self._len - 1))
-        return segments
-
-    def get_seq(self, segment):
-        return self.sequence[segment[0]:segment[1]]
-
-    def consensus(self):
-        """Generate consensus sequence using RO features"""
-        ro_paths = self.find_ro_paths()
-        merged_paths = self.merge_ro_paths(ro_paths)
-        filtered_paths = self.filter_ro_paths(merged_paths)
-        ro_segments = self.circular_segments(filtered_paths)
-        ro_seqs = [('{}-{}'.format(*segment), self.get_seq(segment)) for segment in ro_segments]
-        if len(ro_segments) < 2:
-            return None
-        else:
-            # all_consenses = MSA(ro_seqs)
-            # ccs = sorted([''.join(x[1]) for x in all_consenses], key=lambda x: len(x), reverse=True)[0]
-            return ro_seqs
+    segments = ';'.join(['{}-{}'.format(i, j) for i, j in zip(junc_sites[:-1], junc_sites[1:])])
+    ccs = sorted(ccs_reads, key=lambda x: len(x), reverse=True)[0]
+    return segments, ccs
 
 
-def trim_sequence(seq, primer = 'AAGCAGTGGTATCAACGCAGAGTAC'):
-    l_alignments, l_score, l_positions = local_pairwise_align_ssw(DNA(seq[:100]), DNA(primer))
-    l_trim = l_positions[0][1] + 1 if l_score >= 25 else 0
+def ROF(seq, k=11, p_match=0.8, p_indel=0.1, d_min=40, support_min=10):
+    """
+    Circular Finder
 
-    r_alignments, r_score, r_positions = local_pairwise_align_ssw(DNA(seq[-100:]), DNA(mp.revcomp(primer)))
-    r_trim = -100 + r_positions[0][0] if r_score >= 25 else -1
-    return seq[l_trim:r_trim]
+    Paramters
+    ---------
+    seq : str
+        input sequence
+    k : int, default 11
+        k-mer length
+    p_match : float, default 0.8
+        probability of match in kmer
+    p_indel : float, default 0.1
+        probability of indel in kmer
+    d_min : int, default 40
+        minimum distance of repeat kmer
+    support_min : int, default 19
+        minimum support kmer of distance
 
+    Returns
+    -------
+    junc : tuple
+        position of junction site
 
-def MSA(fasta):
-    match = 1
-    gap = -2
-    mismatch = -1
-    globalAlign = 0
-    simple = 0
+    """
 
-    graph = poagraph.POAGraph(fasta[0][1], fasta[0][0])
-    for label, sequence in fasta[1:]:
-        alignment = seqgraphalignment.SeqGraphAlignment(sequence, graph, fastMethod=not simple,
-                                                        globalAlign=globalAlign,
-                                                        matchscore=match, mismatchscore=mismatch,
-                                                        gapscore=gap)
-        graph.incorporateSeqAlignment(alignment, sequence, label)
+    assert 0 <= p_indel <= 1
+    assert 0 <= p_match <= 1
 
-    return graph.allConsenses()
+    # Occurence of kmer
+    kmer_occ = defaultdict(list)
+    for i in range(len(seq) - k):
+        kmer = seq[i:i + k]
+        kmer_occ[kmer].append(i)
 
+    # Distance of repeat kmers
+    tuple_dis = defaultdict(int)
+    for k_occ in kmer_occ.values():
+        for x1, x2 in zip(k_occ[:-1], k_occ[1:]):
+            # filter out repeat near than d_min
+            if x2 - x1 >= d_min:
+                tuple_dis[x2 - x1] += 1
 
-def generate_consensus(data_dir, sample, read_id, circ_id):
-    sam = pysam.AlignmentFile('{}/{}_circRNA_pseudo.sorted.bam'.format(data_dir, sample))
-    for x in sam.fetch(circ_id, multiple_iterators=True):
-        if x.query_name != read_id:
-            continue
-        if x.is_supplementary or x.is_secondary:
-            continue
-        read = x
-        break
-
-    read_seq = read.query_sequence
-    trimmed_seq = trim_sequence(read_seq)
-
-    # ro_finder = ROFinder(trimmed_seq, match=10, mismatch=-3, gap=-5)
-    # ccs = ro_finder.consensus()
-
-    ccs = blast_search(trimmed_seq)
-    return ccs
-
-
-def blast_search(seq):
-    def merge_hsp(x):
-        tmp = x[0]
-        merged = [tmp, ]
-        for i in x[1:]:
-            if i - tmp <= 35:
-                tmp = i
-            else:
-                merged.append(i)
-                tmp = i
-        return merged
-
-    def is_seed(pos):
-        if len(pos) <= 2:
-            return 1
-        else:
-            segments = ([val - pos[i - 1] for i, val in enumerate(pos) if i > 0])
-            return 1 if np.max(segments) - np.min(segments) <= 20 else 0
-
-    def extend_hsp(x, seq_len):
-        extended = []
-        for i, (start, end) in enumerate(x):
-            start = min(0, start) if i == 0 else x[i - 1][1]
-            extended.append([start, end])
-
-        extended[-1][1] = seq_len
-        return extended
-
-    kmers = [seq[i:i + 11] for i in range(len(seq)) if i + 11 < len(seq)]
-    hsp = {}
-    for i, j in enumerate(kmers):
-        hsp.setdefault(j, []).append(i)
-
-    for i in hsp:
-        hsp[i] = merge_hsp(hsp[i])
-
-    cmp_hsp = lambda a, b: min(hsp[b]) - min(hsp[a]) if len(hsp[a]) == len(hsp[b]) else len(hsp[a]) - len(hsp[b])
-
-    seed_num = max([len(j) for _, j in hsp.items()])
-    seed_list = sorted([i for i, j in hsp.items() if len(j) == seed_num and is_seed(j)], key=cmp_to_key(cmp_hsp),
-                       reverse=True)
-
-    try:
-        init_seed = [(start, end + 11) for start, end in zip(hsp[seed_list[0]], hsp[seed_list[-1]])]
-        extended_seed = extend_hsp(init_seed, len(seq))
-
-        if len(extended_seed) >= 2:
-            seqs = [('{}-{}'.format(start, end), seq[start:end]) for (start, end) in extended_seed]
-            # ccs = MSA(seqs)
-            ccs = seqs
-        else:
-            ccs = None
-    except IndexError as e:
-        ccs = None
-
-    return ccs
-
-
-def worker1(seq):
-    trimmed_seq = trim_sequence(seq)
-    ro_finer = ROFinder(trimmed_seq)
-    return ro_finer.consensus()
-
-
-def worker2(seq):
-    trimmed_seq = trim_sequence(seq)
-    if len(trimmed_seq) == 0:
+    if len(tuple_dis) == 0:
         return None
-    return blast_search(trimmed_seq)
+
+    tuple_dis_mean = list(tuple_dis)[np.argmax(list(tuple_dis.values()))]
+
+    # Minimum suppport kmer for circular segments
+    if tuple_dis[tuple_dis_mean] <= support_min:
+        return None
+
+    # Random walk distribution for alignment length
+    tuple_dis_delta = int(2.3 * np.sqrt(p_indel * tuple_dis_mean))
+
+    # Kmer with maximum occurence
+    sorted_kmers = sorted(list(kmer_occ), key=lambda x: (len(kmer_occ[x]), -kmer_occ[x][0]), reverse=True)
+    occ_max = len(kmer_occ[sorted_kmers[0]])
+
+    cand_junc = []
+    for kmer in sorted_kmers:
+        if len(kmer_occ[kmer]) != occ_max:
+            break
+        valid_s = valid_junc(kmer_occ[kmer], tuple_dis_mean, tuple_dis_delta)
+        if len(valid_s) == 0:
+            continue
+        cand_junc.append(valid_s)
+
+    if len(cand_junc) == 0:
+        return None
+
+    final_junc = sorted(cand_junc, key=lambda x: (len(x), -x[0]), reverse=True)[0]
+
+    while final_junc[0] >= 15:
+        if tuple_dis_mean < final_junc[0]:
+            x, score = best_hit(seq, seq[final_junc[0]:final_junc[0] + k],
+                                max(0, final_junc[0] - tuple_dis_mean - tuple_dis_delta),
+                                final_junc[0] - tuple_dis_mean + tuple_dis_delta)
+            if score > 3:
+                return None
+            final_junc = [x, ] + final_junc
+        else:
+            # final_junc = [0, ] + final_junc
+            break
+
+    while final_junc[-1] <= len(seq) - 15:
+        if final_junc[-1] + tuple_dis_mean < len(seq):
+            x, score = best_hit(seq, seq[final_junc[-1]:final_junc[-1] + k],
+                                final_junc[-1] + tuple_dis_mean - tuple_dis_delta,
+                                min(final_junc[-1] + tuple_dis_mean + tuple_dis_delta, len(seq)))
+            if score > 3:
+                return None
+            final_junc.append(x)
+        else:
+            final_junc.append(len(seq))
+
+    return final_junc
 
 
-def main():
-    import subprocess
+def valid_junc(juncs, d_mean, d_delta):
+    valid_s = []
+    last_s = None
+    for s in juncs:
+        if last_s is not None and s != last_s:
+            continue
+
+        for x in range(s + d_mean - d_delta, s + d_mean + d_delta):
+            if x in juncs:
+                valid_s.append(s)
+                last_s = x
+                break
+
+    if last_s is not None:
+        valid_s.append(last_s)
+
+    return valid_s
+
+
+def best_hit(seq, seed, start, end):
+    import numpy as np
+    from Levenshtein import distance
+    k = len(seed)
+    pos = []
+    dis = []
+    for i in range(start, end):
+        pos.append(i)
+        dis.append(distance(seq[i:i + k], seed))
+
+    min_x = np.argmin(dis)
+    return pos[min_x], dis[min_x]
+
+
+def worker(chunk, out_dir, debugging):
+    ret = []
+    for header, seq in chunk:
+        segments, ccs = find_consensus(header, seq, out_dir, debugging)
+        ret.append((header, segments, ccs))
+    return ret
+
+
+def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
+    import gzip
     from multiprocessing import Pool
-    data_dir = '/home/zhangjy/03.CIRIpacbio/1908_Nanopore/alignment/'
-    fq_dir = '/home/zhangjy/03.CIRIpacbio/1908_Nanopore/fastq'
-    for sample in 'barcode20', 'barcode21', 'barcode22':
-        print('Loading {}'.format(sample))
-        # wc_results = subprocess.getoutput('wc -l {}/RO_reads/{}_aligned_reads.list'.format(data_dir, sample))
-        # total_cnt = int(wc_results.split(' ')[0])
-        #
-        # # Load reads id
-        # cand_reads = {}
-        # with open('{}/RO_reads/{}_aligned_reads.list'.format(data_dir, sample), 'r') as f:
-        #     for line in f:
-        #         content = line.rstrip().split('\t')
-        #         q_name, q_len, circ_id, circ_length, is_circ, aligned_length, is_ro, seed_len, seed = content
-        #         cand_reads.setdefault(circ_id, []).append(q_name)
-        #
-        # # Load read sequence
-        # cand_seqs = {}
-        # sam = pysam.AlignmentFile('{}/{}_circRNA_pseudo.sorted.bam'.format(data_dir, sample))
-        # for circ_id in cand_reads:
-        #     for x in sam.fetch(circ_id, multiple_iterators=True):
-        #         if x.query_name not in cand_reads[circ_id]:
-        #             continue
-        #         if x.is_supplementary or x.is_secondary:
-        #             continue
-        #         cand_seqs[x.query_name] = x.query_sequence
-        import gzip
-        pool = Pool(4)
-        jobs = []
+    from utils import to_str
+    from logger import ProgressBar
+    pool = Pool(threads)
+    jobs = []
 
-        total_cnt = 0
-        fastq = gzip.open('{}/{}.fq.gz'.format(fq_dir, sample))
-        for line in fastq:
-            total_cnt += 1
-            header = line.rstrip()
-            seq = fastq.readline().rstrip()
-            separator = fastq.readline()
-            qual = fastq.readline()
+    # Auto detect input format
+    is_fastq = 1
+    is_gz = 1
+    if in_file.endswith('.fa') or in_file.endswith('.fasta'):
+        is_fastq = 0
+        is_gz = 0
+        fq = open(in_file, 'r')
+    elif in_file.endswith('.fq') or in_file.endswith('.fastq'):
+        is_gz = 0
+        fq = open(in_file, 'r')
+    elif in_file.endswith('.fq.gz') or in_file.endswith('.fastq.gz'):
+        fq = gzip.open(in_file, 'rb')
 
-            jobs.append(pool.apply_async(worker1, (seq, )))
-        pool.close()
+    total_cnt = 0
+    chunk = []
+    chunk_size = 250
+    chunk_cnt = 0
+    for line in fq:
+        if is_gz:
+            header = to_str(line).rstrip().split(' ')[0]
+            seq = to_str(fq.readline()).rstrip()
+        else:
+            header = line.rstrip().split(' ')[0]
+            seq = fq.readline().rstrip()
 
-        read_cnt = 0
-        ro_cnt = 0
-        prog = ProgressBar()
-        prog.update(0)
+        if is_fastq:
+            header = header.lstrip('@')
+            fq.readline()
+            fq.readline()
+        else:
+            header = header.lstrip('>')
+
+        total_cnt += 1
+        # Split into chunks
+        chunk.append((header, seq))
+        if len(chunk) == chunk_size:
+            jobs.append(pool.apply_async(worker, (chunk, out_dir, debugging, )))
+            # worker(chunk, out_dir, debugging)
+            chunk = []
+            chunk_cnt += 1
+
+    if len(chunk) > 0:
+        jobs.append(pool.apply_async(worker, (chunk, out_dir, debugging, )))
+        chunk_cnt += 1
+        # worker(chunk, out_dir, debugging)
+    pool.close()
+
+    prog = ProgressBar()
+    prog.update(0)
+    finished_chunk = 0
+    total_reads = 0
+    ro_reads = 0
+
+    with open('{}/{}.ccs.fa'.format(out_dir, prefix), 'w') as out:
         for job in jobs:
-            ccs = job.get()
-            if ccs is not None:
-                ro_cnt += 1
-            read_cnt += 1
-            prog.update(100 * read_cnt // total_cnt)
-        pool.join()
-        prog.update(100)
-        print('Sample: {}, Total reads: {}, RO reads: {}\n'.format(sample, total_cnt, ro_cnt))
+            ret = job.get()
+            for header, segments, ccs in ret:
+                total_reads += 1
+                if segments is None and ccs is None:
+                    continue
+                ro_reads += 1
+                out.write('>{}\t{}\t{}\n{}\n'.format(header, segments, len(ccs), ccs))
+            finished_chunk += 1
+            prog.update(100 * finished_chunk // chunk_cnt)
+    prog.update(100)
+    pool.join()
 
-
-if __name__ == '__main__':
-    main()
+    return total_reads, ro_reads

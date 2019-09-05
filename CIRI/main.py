@@ -1,25 +1,44 @@
 #!/home/zhangjy/.virtualenvs/Benchmarking/bin/python
-import argparse
+import os
 import sys
-
-from CIRI import assemble
+import argparse
+from logger import get_logger
 
 
 def main():
+    from rofinder import find_ccs_reads
+    from utils import check_file, check_dir
     parser = argparse.ArgumentParser()
-    parser.add_argument('infile', nargs='?', type=argparse.FileType('r'), default=sys.stdin)
-    # parser.add_argument('-G', '--gap', type=int, default=-2, help='Gap penalty, default=-1')
-    # parser.add_argument('-g', '--globalAlign', action='store_true', help='Global alignment (default: local)')
+    parser.add_argument('-i', '--in', dest='input', metavar='READS', default=None,
+                        help='Input reads.fq.gz', )
+    parser.add_argument('-o', '--out', dest='output', metavar='DIR', default=None,
+                        help='Output directory, default: ./', )
+    parser.add_argument('-p', '--prefix', dest='prefix', metavar='PREFIX', default="CIRI-long",
+                        help='Output sample prefix, default: CIRI-long', )
+    parser.add_argument('-t', '--threads', dest='threads', metavar='INT', default=os.cpu_count(),
+                        help='Number of threads', )
+    parser.add_argument('--debug', dest='debug', default=False, action='store_true',
+                        help='Run in debuggin mode', )
     args = parser.parse_args()
 
-    fasta = args.infile
+    logger = get_logger('CIRI-long')
+    logger.info('Input reads: ' + os.path.basename(args.input))
+    logger.info('Output CCS reads: ' + os.path.basename(args.output))
+    logger.info('Multi threads: {}'.format(args.threads))
 
-    fasta = '/home/zhangjy/Data/PROJECT/01.Benchmarking_Study/pacbio/m54148_190411_071934.ccs.fasta.gz'
-    # fasta = '/home/zhangjy/git/CIRI-PacBio/test_data/m54148_190408_064610.ccs.fasta.gz'
-    # fasta = '/home/zhangjy/git/CIRI-PacBio/test_data/BSJ.fa.gz'
+    if args.input is None or args.output is None:
+        sys.exit('Please provide input and output file, run CIRI-long using -h or --help for detailed information.')
 
-    ccs_reads = assemble.circularize(fasta)
-    print(len(ccs_reads))
+    in_file = check_file(args.input)
+    out_dir = check_dir(args.output)
+    check_dir(out_dir + '/tmp')
+    prefix = args.prefix
+    threads = int(args.threads)
+    debugging = args.debug
+
+    total_reads, ro_reads = find_ccs_reads(in_file, out_dir, prefix, threads, debugging)
+
+    logger.info('Total Reads: {}, RO reads: {}'.format(total_reads, ro_reads))
 
 
 if __name__ == '__main__':
