@@ -2,17 +2,16 @@ import numpy as np
 from skbio import DNA, local_pairwise_align_ssw
 from collections import namedtuple, defaultdict
 
+import poa
+
 
 def find_consensus(header, seq, out_dir, debugging):
-    from preprocess import trim_primer, partial_order_alignment
+    from preprocess import trim_primer
 
     # Trim sequence
     trimmed_seq = trim_primer(seq)
     if len(trimmed_seq) <= 50:
         return None, None
-
-    if header == '62117b92-99ad-45b7-8a7e-7915da2ad2f8':
-        print(1)
 
     junc_sites = ROF(trimmed_seq)
     if junc_sites is None:
@@ -20,20 +19,23 @@ def find_consensus(header, seq, out_dir, debugging):
 
     fasta = [('{}-{}'.format(i, j), trimmed_seq[i:j]) for i, j in zip(junc_sites[:-1], junc_sites[1:])]
 
-    poa_graph = partial_order_alignment(fasta)
-    ccs_reads = [''.join(i[1]) for i in poa_graph.allConsenses()]
+    print(header)
+    ccs = poa.consensus(fasta)
 
-    if debugging is True:
-        alignments = poa_graph.generateAlignmentStrings()
-        with open('{}/tmp/{}.msa'.format(out_dir, header), 'w') as out:
-            for label, alignstring in alignments:
-                out.write("{0:15s} {1:s}\n".format(label, alignstring))
-        with open('{}/tmp/{}.fa'.format(out_dir, header), 'w') as out:
-            for label, sequence in fasta:
-                out.write('>{}\n{}\n'.format(label, sequence))
+    # poa_graph = partial_order_alignment(fasta)
+    # ccs_reads = [''.join(i[1]) for i in poa_graph.allConsenses()]
+    # ccs = sorted(ccs_reads, key=lambda x: len(x), reverse=True)[0]
+
+    # if debugging is True:
+    #     alignments = poa_graph.generateAlignmentStrings()
+    #     with open('{}/tmp/{}.msa'.format(out_dir, header), 'w') as out:
+    #         for label, alignstring in alignments:
+    #             out.write("{0:15s} {1:s}\n".format(label, alignstring))
+    #     with open('{}/tmp/{}.fa'.format(out_dir, header), 'w') as out:
+    #         for label, sequence in fasta:
+    #             out.write('>{}\n{}\n'.format(label, sequence))
 
     segments = ';'.join(['{}-{}'.format(i, j) for i, j in zip(junc_sites[:-1], junc_sites[1:])])
-    ccs = sorted(ccs_reads, key=lambda x: len(x), reverse=True)[0]
     return segments, ccs
 
 

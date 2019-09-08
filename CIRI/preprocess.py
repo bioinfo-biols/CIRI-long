@@ -3,14 +3,14 @@ def revcomp(seq):
     return seq.translate(trantab)[::-1]
 
 
-def trim_primer(seq, primer='AAGCAGTGGTATCAACGCAGAGTAC'):
+def trim_primer(seq, primer='AAGCAGTGGTATCAACGCAGAGTAC', last_bases=150):
     from skbio import DNA
     from skbio.alignment import local_pairwise_align_ssw
-    l_alignments, l_score, l_positions = local_pairwise_align_ssw(DNA(seq[:100]), DNA(primer))
+    l_alignments, l_score, l_positions = local_pairwise_align_ssw(DNA(seq[:last_bases]), DNA(primer))
     l_trim = l_positions[0][1] + 1 if l_score >= 25 else 0
 
-    r_alignments, r_score, r_positions = local_pairwise_align_ssw(DNA(seq[-100:]), DNA(revcomp(primer)))
-    r_trim = -100 + r_positions[0][0] if r_score >= 25 else len(seq)
+    r_alignments, r_score, r_positions = local_pairwise_align_ssw(DNA(seq[-last_bases:]), DNA(revcomp(primer)))
+    r_trim = -last_bases + r_positions[0][0] if r_score >= 25 else len(seq)
     return seq[l_trim:r_trim]
 
 
