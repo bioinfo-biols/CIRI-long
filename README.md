@@ -1,14 +1,31 @@
 # CIRI-long
 Circular RNA Identification for Nanopore Sequencing 
 
-```bash
-git clone --recursive https://github.com/rvaser/spoa spoa
-cd spoa
-mkdir build
-cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make
-cmake -DCMAKE_INSTALL_PREFIX:PATH=/usr . && make all install
+#### Installation
 
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+You can simply clone the whole repository, then use `make` to start a complete installation 
+
+```bash
+git clone --recursive https://github.com/Kevinzjy/CIRI-long.git CIRI-long
+cd CIRI-long
+make
+```
+
+**Note**: for expert users, the installation under virtualenv is highly recommended
+
+```bash
+git clone --recursive https://github.com/Kevinzjy/CIRI-long.git CIRI-long
+cd CIRI-long
+
+# Create virtual environment
+python -m venv venv
+
+# Activate virtualenv
+source ./venv/bin/activate
+
+# Install CIRI-long
+make
+
+# Deactivate
+deactivate
 ```
