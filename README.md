@@ -1,4 +1,8 @@
-# CIRI-long
+## CIRI-long
+
+[![Build Status](https://travis-ci.com/Kevinzjy/CIRI-long.svg?token=sq9vq2uzixNezTJhts8Z&branch=master)](https://travis-ci.org/Kevinzjy/CIRI-long)
+[![The MIT License](https://img.shields.io/badge/license-MIT-orange.svg)](https://github.com/Kevinzjy/CIRI-long/blob/master/LICENSE)
+
 Circular RNA Identification for Nanopore Sequencing 
 
 #### Dependency
@@ -43,6 +47,9 @@ source ./venv/bin/activate
 
 # Install CIRI-long
 make
+
+# Test for installation
+make test
 
 # Deactivate
 deactivate
