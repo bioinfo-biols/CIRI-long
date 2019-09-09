@@ -29,16 +29,16 @@ static inline char *fasta_to_ccs(vector<string> sequences) {
 
     string consensus = graph->generate_consensus();
 
-    fprintf(stderr, "Consensus (%zu)\n", consensus.size());
-    fprintf(stderr, "%s\n", consensus.c_str());
-
-    vector<string> msa;
-    graph->generate_multiple_sequence_alignment(msa);
-
-    fprintf(stderr, "Multiple sequence alignment\n");
-    for (const auto& it: msa) {
-        fprintf(stderr, "%s\n", it.c_str());
-    }
+//    fprintf(stderr, "Consensus (%zu)\n", consensus.size());
+//    fprintf(stderr, "%s\n", consensus.c_str());
+//
+//    vector<string> msa;
+//    graph->generate_multiple_sequence_alignment(msa);
+//
+//    fprintf(stderr, "Multiple sequence alignment\n");
+//    for (const auto& it: msa) {
+//        fprintf(stderr, "%s\n", it.c_str());
+//    }
 
     char *cons_str = const_cast<char*>(consensus.c_str());
     return cons_str;

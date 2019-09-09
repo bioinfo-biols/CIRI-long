@@ -7,7 +7,7 @@ install:
 
 script:
   - CIRI-long --version
-  - CIRI-long-test
+  - python setup.py test
 
 notifications:
   pushover:

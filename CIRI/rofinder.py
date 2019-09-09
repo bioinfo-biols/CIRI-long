@@ -2,8 +2,6 @@ import numpy as np
 from skbio import DNA, local_pairwise_align_ssw
 from collections import namedtuple, defaultdict
 
-import poa
-
 
 def find_consensus(header, seq, out_dir, debugging):
     from .preprocess import trim_primer

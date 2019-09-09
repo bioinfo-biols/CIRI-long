@@ -58,7 +58,8 @@ setup(
         'pysam==0.15.3', 'python-Levenshtein==0.12.0', 'scikit-bio==0.5.5',
         'scikit-learn==0.21.3', 'scipy==1.3.1',
     ],
-    test_suite="tests",
+    test_suite="nose.collector",
+    tests_require=['nose'],
     classifiers=[
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python',

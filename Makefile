@@ -13,3 +13,4 @@ lib:
 test:
 	python3 setup.py build_ext --inplace
 	mv poa.cpython-36m-x86_64-linux-gnu.so ./CIRI
+	python3 setup.py test

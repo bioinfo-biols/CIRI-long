@@ -5,6 +5,7 @@ import argparse
 
 
 def main():
+    from .version import __version__
     from .rofinder import find_ccs_reads
     from .utils import check_file, check_dir
     from .logger import get_logger
@@ -20,6 +21,9 @@ def main():
                         help='Number of threads', )
     parser.add_argument('--debug', dest='debug', default=False, action='store_true',
                         help='Run in debuggin mode', )
+
+    parser.add_argument('-v', '--version', action='version',
+                        version='%(prog)s {version}'.format(version=__version__))
     args = parser.parse_args()
 
     logger = get_logger('CIRI-long')
