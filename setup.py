@@ -50,7 +50,8 @@ setup(
             'CIRI-long=CIRI.main:main',
         ]
     },
-    ext_modules=cythonize(extensions),
+    ext_modules=cythonize(extensions,
+                          build_dir="CIRI"),
     include_package_data=True,
     zip_safe=False,
     install_requires=[

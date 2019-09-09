@@ -3,11 +3,11 @@ python:
   - "3.6"
 
 install:
-  - make
+  - make all
 
 script:
   - CIRI-long --version
-  - python setup.py test
+  - make test
 
 notifications:
   pushover:

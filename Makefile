@@ -11,6 +11,5 @@ lib:
 	cd spoa/build && cmake -DCMAKE_BUILD_TYPE=Release .. && make
 
 test:
-	python3 setup.py build_ext --inplace
-	mv poa.cpython-36m-x86_64-linux-gnu.so ./CIRI
+	python3 setup.py build_ext --build-lib CIRI
 	python3 setup.py test

@@ -5,7 +5,7 @@ from collections import namedtuple, defaultdict
 
 def find_consensus(header, seq, out_dir, debugging):
     from .preprocess import trim_primer
-    from .poa import consensus
+    from CIRI.poa import consensus
 
     # Trim sequence
     trimmed_seq = trim_primer(seq)
@@ -18,7 +18,7 @@ def find_consensus(header, seq, out_dir, debugging):
 
     fasta = [('{}-{}'.format(i, j), trimmed_seq[i:j]) for i, j in zip(junc_sites[:-1], junc_sites[1:])]
 
-    print(header)
+    # print(header)
     ccs = consensus(fasta)
 
     # poa_graph = partial_order_alignment(fasta)
@@ -247,7 +247,7 @@ def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
                 if segments is None and ccs is None:
                     continue
                 ro_reads += 1
-                out.write('>{}\t{}\t{}\n{}\n'.format(header, segments, len(ccs), ccs))
+                out.write('>{}\t{}\t{}\n{}\n'.format(header, segments, len(ccs), to_str(ccs)))
 
             finished_chunk += 1
             prog.update(100 * finished_chunk // chunk_cnt)

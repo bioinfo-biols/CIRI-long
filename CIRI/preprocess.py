@@ -15,8 +15,8 @@ def trim_primer(seq, primer='AAGCAGTGGTATCAACGCAGAGTAC', last_bases=150):
 
 
 def partial_order_alignment(fasta, match=2, mismatch=-3, gap=-2, globalAlign=0, simple=0):
-    from .poagraph import POAGraph
-    from .seqgraphalignment import SeqGraphAlignment
+    from CIRI.poagraph import POAGraph
+    from CIRI.seqgraphalignment import SeqGraphAlignment
     graph = POAGraph(fasta[0][1], fasta[0][0])
 
     if len(fasta) > 2:

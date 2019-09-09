@@ -5,10 +5,10 @@ import argparse
 
 
 def main():
-    from .version import __version__
-    from .rofinder import find_ccs_reads
-    from .utils import check_file, check_dir
-    from .logger import get_logger
+    from CIRI.version import __version__
+    from CIRI.rofinder import find_ccs_reads
+    from CIRI.utils import check_file, check_dir
+    from CIRI.logger import get_logger
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--in', dest='input', metavar='READS', default=None,
