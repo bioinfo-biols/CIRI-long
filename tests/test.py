@@ -1,4 +1,4 @@
-import poa
+from CIRI import poa
 
 
 def main():

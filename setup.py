@@ -48,7 +48,6 @@ setup(
     entry_points={
         'console_scripts': [
             'CIRI-long=CIRI.main:main',
-            'CIRI-long-test=CIRI.test:main',
         ]
     },
     ext_modules=cythonize(extensions),
@@ -59,6 +58,7 @@ setup(
         'pysam==0.15.3', 'python-Levenshtein==0.12.0', 'scikit-bio==0.5.5',
         'scikit-learn==0.21.3', 'scipy==1.3.1',
     ],
+    test_suite="tests",
     classifiers=[
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python',

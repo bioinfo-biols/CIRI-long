@@ -2,12 +2,13 @@
 import os
 import sys
 import argparse
-from logger import get_logger
 
 
 def main():
-    from rofinder import find_ccs_reads
-    from utils import check_file, check_dir
+    from .rofinder import find_ccs_reads
+    from .utils import check_file, check_dir
+    from .logger import get_logger
+
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--in', dest='input', metavar='READS', default=None,
                         help='Input reads.fq.gz', )

@@ -6,7 +6,8 @@ import poa
 
 
 def find_consensus(header, seq, out_dir, debugging):
-    from preprocess import trim_primer
+    from .preprocess import trim_primer
+    from .poa import consensus
 
     # Trim sequence
     trimmed_seq = trim_primer(seq)
@@ -20,7 +21,7 @@ def find_consensus(header, seq, out_dir, debugging):
     fasta = [('{}-{}'.format(i, j), trimmed_seq[i:j]) for i, j in zip(junc_sites[:-1], junc_sites[1:])]
 
     print(header)
-    ccs = poa.consensus(fasta)
+    ccs = consensus(fasta)
 
     # poa_graph = partial_order_alignment(fasta)
     # ccs_reads = [''.join(i[1]) for i in poa_graph.allConsenses()]
@@ -159,7 +160,6 @@ def valid_junc(juncs, d_mean, d_delta):
 
 
 def best_hit(seq, seed, start, end):
-    import numpy as np
     from Levenshtein import distance
     k = len(seed)
     pos = []
@@ -183,8 +183,8 @@ def worker(chunk, out_dir, debugging):
 def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
     import gzip
     from multiprocessing import Pool
-    from utils import to_str
-    from logger import ProgressBar
+    from .utils import to_str
+    from .logger import ProgressBar
     pool = Pool(threads)
     jobs = []
 

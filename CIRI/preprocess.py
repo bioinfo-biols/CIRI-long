@@ -15,21 +15,21 @@ def trim_primer(seq, primer='AAGCAGTGGTATCAACGCAGAGTAC', last_bases=150):
 
 
 def partial_order_alignment(fasta, match=2, mismatch=-3, gap=-2, globalAlign=0, simple=0):
-    import poagraph
-    import seqgraphalignment
-    graph = poagraph.POAGraph(fasta[0][1], fasta[0][0])
+    from .poagraph import POAGraph
+    from .seqgraphalignment import SeqGraphAlignment
+    graph = POAGraph(fasta[0][1], fasta[0][0])
 
     if len(fasta) > 2:
         for label, sequence in fasta[1:-1]:
-            alignment = seqgraphalignment.SeqGraphAlignment(sequence, graph, fastMethod=not simple,
-                                                            globalAlign=1,
-                                                            matchscore=match, mismatchscore=mismatch,
-                                                            gapscore=gap)
+            alignment = SeqGraphAlignment(sequence, graph, fastMethod=not simple,
+                                          globalAlign=1,
+                                          matchscore=match, mismatchscore=mismatch,
+                                          gapscore=gap)
             graph.incorporateSeqAlignment(alignment, sequence, label)
 
-    alignment = seqgraphalignment.SeqGraphAlignment(fasta[-1][1], graph, fastMethod=not simple,
-                                                    globalAlign=0,
-                                                    matchscore=match, mismatchscore=mismatch,
-                                                    gapscore=gap)
+    alignment = SeqGraphAlignment(fasta[-1][1], graph, fastMethod=not simple,
+                                  globalAlign=0,
+                                  matchscore=match, mismatchscore=mismatch,
+                                  gapscore=gap)
     graph.incorporateSeqAlignment(alignment, fasta[-1][1], fasta[-1][0])
     return graph
