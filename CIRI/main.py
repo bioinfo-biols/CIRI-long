@@ -26,6 +26,9 @@ def main():
                         version='%(prog)s {version}'.format(version=__version__))
     args = parser.parse_args()
 
+    if args.input is None or args.output is None:
+        sys.exit('Please specific input and output files!')
+
     logger = get_logger('CIRI-long')
     logger.info('Input reads: ' + os.path.basename(args.input))
     logger.info('Output CCS reads: ' + os.path.basename(args.output))

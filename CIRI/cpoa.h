@@ -1,3 +1,4 @@
+#include <string.h>
 #include "spoa/spoa.hpp"
 using namespace std;
 
@@ -39,7 +40,8 @@ static inline char *fasta_to_ccs(vector<string> sequences) {
 //    for (const auto& it: msa) {
 //        fprintf(stderr, "%s\n", it.c_str());
 //    }
-
-    char *cons_str = const_cast<char*>(consensus.c_str());
+	char *cons_str;
+	cons_str = new char [consensus.size() + 1];
+	strcpy (cons_str, consensus.c_str());
     return cons_str;
 }

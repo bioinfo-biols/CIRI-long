@@ -5,7 +5,7 @@ from collections import namedtuple, defaultdict
 
 def find_consensus(header, seq, out_dir, debugging):
     from .preprocess import trim_primer
-    from CIRI.poa import consensus
+    from poa import consensus
 
     # Trim sequence
     trimmed_seq = trim_primer(seq)
@@ -20,6 +20,9 @@ def find_consensus(header, seq, out_dir, debugging):
 
     # print(header)
     ccs = consensus(fasta)
+
+    # if header == 'cadf05aa-2c1d-4878-a1d4-8c8a5f9cec08':
+    #     print(header)
 
     # poa_graph = partial_order_alignment(fasta)
     # ccs_reads = [''.join(i[1]) for i in poa_graph.allConsenses()]
@@ -105,7 +108,6 @@ def ROF(seq, k=11, p_match=0.8, p_indel=0.1, d_min=40, support_min=10):
         if len(valid_s) == 0:
             continue
         cand_junc.append(valid_s)
-
 
     if len(cand_junc) == 0:
         return None

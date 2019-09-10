@@ -1,15 +1,34 @@
-.PHONY: all lib CIRI_long test
+.PHONY: help all lib prepare install test clean
 
-all: lib CIRI-long
+all: lib prepare install
 
-CIRI-long:
-	cat requirements.txt | xargs -n 1 pip3 install
-	python3 setup.py install
+help:
+	@echo "make all"
+	@echo "       install CIRI-long and dependencies into current python environment"
+	@echo "make lib"
+	@echo "       prepare development environment, use only once"
+	@echo "make prepare"
+	@echo "       install python requirements"
+	@echo "make install"
+	@echo "       install CIRI-long"
+	@echo "make test"
+	@echo "       unit test, run after installation"
+	@echo "make clean"
+	@echo "       clean python cache files"
 
 lib:
 	mkdir -p spoa/build
 	cd spoa/build && cmake -DCMAKE_BUILD_TYPE=Release .. && make
 
+prepare:
+	cat requirements.txt | xargs -n 1 pip3 install
+
+install:
+	python3 setup.py install
+
 test:
 	python3 setup.py build_ext --build-lib CIRI
 	python3 setup.py test
+
+clean:
+	python3 setup.py clean --all
