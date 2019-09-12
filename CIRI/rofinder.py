@@ -10,11 +10,11 @@ def find_consensus(header, seq, out_dir, debugging):
     # Trim sequence
     trimmed_seq = trim_primer(seq)
     if len(trimmed_seq) <= 50:
-        return None, None
+        return None, None, None
 
     junc_sites = ROF(trimmed_seq)
     if junc_sites is None:
-        return None, None
+        return trimmed_seq, None, None
 
     fasta = [('{}-{}'.format(i, j), trimmed_seq[i:j]) for i, j in zip(junc_sites[:-1], junc_sites[1:])]
 
@@ -38,7 +38,7 @@ def find_consensus(header, seq, out_dir, debugging):
     #             out.write('>{}\n{}\n'.format(label, sequence))
 
     segments = ';'.join(['{}-{}'.format(i, j) for i, j in zip(junc_sites[:-1], junc_sites[1:])])
-    return segments, ccs
+    return trimmed_seq, segments, ccs
 
 
 def ROF(seq, k=11, p_match=0.8, p_indel=0.1, d_min=40, support_min=10):
@@ -175,8 +175,8 @@ def best_hit(seq, seed, start, end):
 def worker(chunk, out_dir, debugging):
     ret = []
     for header, seq in chunk:
-        segments, ccs = find_consensus(header, seq, out_dir, debugging)
-        ret.append((header, segments, ccs))
+        trimmed_seq, segments, ccs = find_consensus(header, seq, out_dir, debugging)
+        ret.append((header, trimmed_seq, segments, ccs))
     return ret
 
 
@@ -241,15 +241,17 @@ def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
     total_reads = 0
     ro_reads = 0
 
-    with open('{}/{}.ccs.fa'.format(out_dir, prefix), 'w') as out:
+    with open('{}/{}.ccs.fa'.format(out_dir, prefix), 'w') as out, \
+            open('{}/{}.trimmed.seq'.format(out_dir, prefix), 'w') as trimmed:
         for job in jobs:
             ret = job.get()
-            for header, segments, ccs in ret:
+            for header, trimmed_seq, segments, ccs in ret:
                 total_reads += 1
                 if segments is None and ccs is None:
                     continue
                 ro_reads += 1
                 out.write('>{}\t{}\t{}\n{}\n'.format(header, segments, len(ccs), to_str(ccs)))
+                trimmed.write('>{}\n{}\n'.format(header, trimmed_seq))
 
             finished_chunk += 1
             prog.update(100 * finished_chunk // chunk_cnt)
