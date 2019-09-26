@@ -134,7 +134,7 @@ def parse_chunk(chunk):
             pass
 
         # Remove CCS that not start from tailed end
-        if seg_st > 100 or seg_en < len(raw) - 100:
+        if seg_st > 25 or seg_en < len(raw) - 25:
             continue
 
         accordance_cnt += 1
@@ -143,7 +143,8 @@ def parse_chunk(chunk):
         fasta = []
         for pos in segments.split(';'):
             i_st, i_en = pos.split('-')
-            fasta.append((pos, raw[int(i_st):int(i_en)]))
+            fasta.append(('{}-{}'.format(i_st, i_en), raw[int(i_st):int(i_en)]))
+
         fasta_ccs = msa(fasta)
         if len(fasta_ccs) > 1:
             continue
@@ -170,6 +171,9 @@ def parse_chunk(chunk):
             if iter_num >= 10:
                 break
 
+        if iter_num >= 10:
+            continue
+
         tmp_hits = []
         for hit in ALIGNER.map(tmp):
             if hit.is_primary:
@@ -180,7 +184,7 @@ def parse_chunk(chunk):
         if tmp_hit.r_en - tmp_hit.r_st < 0.9 * len(ccs):
             continue
 
-        # Remove circRNA positions
+        # Retrive circRNA positions
         ret.append((read_id, segments, tmp_junc, '{}:{}-{}'.format(tmp_hit.ctg, tmp_hit.r_st, tmp_hit.r_en - 1), tmp))
         circ_cnt += 1
 
@@ -222,7 +226,7 @@ def parse_sample(sample, aligner):
     chunk_size = 250
     chunk_cnt = 0
     jobs = []
-    pool = Pool(10, initializer, (aligner,))
+    pool = Pool(12, initializer, (aligner,))
     for reads in grouper(list(all_reads), chunk_size):
         chunk = [[i, ] + all_reads[i] for i in reads if i is not None]
         chunk_cnt += 1
