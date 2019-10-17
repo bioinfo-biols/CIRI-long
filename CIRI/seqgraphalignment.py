@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# Forked from https://github.com/ljdursi/poapy
 # TODO: add affine gap penalty for multiple sequence alignment
 from __future__ import print_function
 try:

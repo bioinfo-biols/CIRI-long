@@ -1,8 +1,9 @@
-import os
-import sys
-import pysam
+import logging
+LOGGER = logging.getLogger('CIRI-long')
+
+import numpy as np
 import mappy as mp
-import time
+
 from CIRI import poagraph
 from CIRI import seqgraphalignment
 from CIRI.logger import ProgressBar
@@ -64,15 +65,31 @@ def grouper(iterable, n, fillvalue=None):
 
 
 def parse_chunk(chunk):
-    total_cnt = 0
-    unmapped_cnt = 0
+    consensus_cnt = 0
+    raw_unmapped_cnt = 0
+    ccs_mapped_cnt = 0
     accordance_cnt = 0
-    circ_cnt = 0
+    bsj_cnt = 0
+
     ret = []
     for read_id, segments, ccs, raw in chunk:
-        total_cnt += 1
+        # Filter 1 - Remove ccs which not that consensus
+        fasta = []
+        for pos in segments.split(';'):
+            i_st, i_en = pos.split('-')
+            fasta.append(('{}-{}'.format(i_st, i_en), raw[int(i_st):int(i_en)]))
 
-        # Remove linear mapped reads
+        d_mean = np.mean([len(i) for _, i in fasta])
+        d_delta = int(2.3 * np.sqrt(0.1 * d_mean))
+
+        fasta_ccs = msa(fasta)
+        if len(fasta_ccs) > 1:
+            continue
+        if 0.9 * (d_mean - d_delta) < len(fasta_ccs[0]) < 1.1 * (d_mean + d_delta):
+            continue
+        consensus_cnt += 1
+
+        # Filter 2 - Remove linear mapped reads
         is_raw_mapped = 0
         hit = None
         for hit in ALIGNER.map(raw):
@@ -84,22 +101,23 @@ def parse_chunk(chunk):
                 is_raw_mapped = 1
         if is_raw_mapped:
             continue
-        unmapped_cnt += 1
+        raw_unmapped_cnt += 1
 
         if hit is not None:
             raw_en, raw_st = hit.q_en, hit.q_st
         else:
             raw_en, raw_st = None, None
 
-        # Remove reads that ccs doesn't mapped to genome
+        # Filter 3 - Remove reads that ccs doesn't mapped to genome
         ccs_hit = None
         for hit in ALIGNER.map(ccs):
             if hit.is_primary:
                 ccs_hit = hit
         if ccs_hit is None or ccs_hit.ctg in ['MT']:
             continue
+        ccs_mapped_cnt += 1
 
-        # check the alignment results of non-repeat segments
+        # Filter 4 - check the accordance alignment results of non-repeat segments and ccs
         seg_st = int(segments.split(';')[0].split('-')[0])
         seg_en = int(segments.split(';')[-1].split('-')[1])
 
@@ -139,17 +157,7 @@ def parse_chunk(chunk):
 
         accordance_cnt += 1
 
-        # Remove ccs which not that consensus
-        fasta = []
-        for pos in segments.split(';'):
-            i_st, i_en = pos.split('-')
-            fasta.append(('{}-{}'.format(i_st, i_en), raw[int(i_st):int(i_en)]))
-
-        fasta_ccs = msa(fasta)
-        if len(fasta_ccs) > 1:
-            continue
-
-        # Find junction site in CCS
+        # Filter 5 - Find BSJ site in CCS
         tmp = ccs
         tmp_junc = 0
         iter_num = 0
@@ -186,9 +194,9 @@ def parse_chunk(chunk):
 
         # Retrive circRNA positions
         ret.append((read_id, segments, tmp_junc, '{}:{}-{}'.format(tmp_hit.ctg, tmp_hit.r_st, tmp_hit.r_en - 1), tmp))
-        circ_cnt += 1
+        bsj_cnt += 1
 
-    return total_cnt, unmapped_cnt, accordance_cnt, circ_cnt, ret
+    return consensus_cnt, raw_unmapped_cnt, ccs_mapped_cnt, accordance_cnt, ret
 
 
 ALIGNER = None
@@ -199,50 +207,43 @@ def initializer(aligner):
     ALIGNER = aligner
 
 
-def parse_sample(sample, aligner):
+def filter_ccs_reads(ccs_seq, minimap_index, out_dir, prefix, threads, debugging):
     from collections import namedtuple
     from multiprocessing import Pool
     Read = namedtuple('Read', 'segments ccs raw')
 
-    all_reads = {}
-    with open('/home/zhangjy/03.CIRIpacbio/1908_Nanopore/CIRI-long/results/{}.ccs.fa'.format(sample), 'r') as f:
-        for line in f:
-            header = line.rstrip()
-            content = header.split('\t')
-            seq = f.readline().rstrip()
-            all_reads[content[0].lstrip('>')] = [content[1], seq]
+    minimap_aligner = mp.Aligner(minimap_index)
 
-    with open('/home/zhangjy/03.CIRIpacbio/1908_Nanopore/CIRI-long/results/{}.trimmed.seq'.format(sample), 'r') as f:
-        for line in f:
-            header = line.rstrip().split('\t')[0].lstrip('>')
-            seq = f.readline().rstrip()
-            all_reads[header].append(seq)
+    reads_count = {
+        'consensus': 0,
+        'raw_unmapped': 0,
+        'ccs_mapped': 0,
+        'accordance': 0,
+        'bsj': 0,
+    }
 
-    #     with open('../{}.cand_circ.fa'.format(sample), 'w') as out:
-    total_cnt = 0
-    unmapped_cnt = 0
-    accordance_cnt = 0
-    circ_cnt = 0
     chunk_size = 250
     chunk_cnt = 0
     jobs = []
-    pool = Pool(12, initializer, (aligner,))
-    for reads in grouper(list(all_reads), chunk_size):
-        chunk = [[i, ] + all_reads[i] for i in reads if i is not None]
+    pool = Pool(threads, initializer, (minimap_aligner,))
+    for reads in grouper(list(ccs_seq), chunk_size):
+        chunk = [[i, ] + ccs_seq[i] for i in reads if i is not None]
         chunk_cnt += 1
         jobs.append(pool.apply_async(parse_chunk, (chunk,)))
     pool.close()
 
     prog = ProgressBar()
     finished_cnt = 0
-    with open('/home/zhangjy/git/CIRI-long/test_data/{}.cand_circ.fa'.format(sample), 'w') as out:
+    with open('{}/{}.cand_circ.fa'.format(out_dir, prefix), 'w') as out:
         for job in jobs:
             finished_cnt += 1
-            tmp_total, tmp_unmapped, tmp_accordance, tmp_circ, ret = job.get()
-            total_cnt += tmp_total
-            unmapped_cnt += tmp_unmapped
-            accordance_cnt += tmp_accordance
-            circ_cnt += tmp_circ
+
+            tmp_consensus, tmp_raw_unmapped, tmp_ccs_mapped, tmp_accordance, ret = job.get()
+            reads_count['consensus'] += tmp_consensus
+            reads_count['raw_unmapped'] += tmp_raw_unmapped
+            reads_count['ccs_mapped'] += tmp_ccs_mapped
+            reads_count['accordance'] += tmp_accordance
+            reads_count['bsj'] += len(ret)
 
             for read_id, segments, tmp_junc, tmp_circ, tmp in ret:
                 out.write('>{}\t{}\t{}\t{}\n{}\n'.format(read_id, segments, tmp_junc, tmp_circ, tmp))
@@ -250,17 +251,5 @@ def parse_sample(sample, aligner):
     pool.join()
     prog.update(100)
 
-    return total_cnt, unmapped_cnt, accordance_cnt, circ_cnt
+    return reads_count
 
-
-def main():
-    genome_aligner = mp.Aligner('/home/zhangjy/03.CIRIpacbio/1908_Nanopore/CIRI-long/results/genome_splice.mmi')
-
-    print('Sample', 'Total', 'Unmapped', 'Accordance', 'Circ')
-    for sample in 'barcode20', 'barcode21', 'barcode22':
-        total_cnt, unmapped_cnt, accordance_cnt, circ_cnt = parse_sample(sample, genome_aligner)
-        print(sample, total_cnt, unmapped_cnt, accordance_cnt, circ_cnt)
-
-
-if __name__ == '__main__':
-    main()

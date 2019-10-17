@@ -1,6 +1,11 @@
+import os
+import sys
+import logging
+from collections import namedtuple, defaultdict
+LOGGER = logging.getLogger('CIRI-long')
+
 import numpy as np
 from skbio import DNA, local_pairwise_align_ssw
-from collections import namedtuple, defaultdict
 
 
 def find_consensus(header, seq, out_dir, debugging):
@@ -183,8 +188,8 @@ def worker(chunk, out_dir, debugging):
 def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
     import gzip
     from multiprocessing import Pool
-    from .utils import to_str
-    from .logger import ProgressBar
+    from CIRI.utils import to_str
+    from CIRI.logger import ProgressBar
     pool = Pool(threads)
     jobs = []
 
@@ -200,6 +205,8 @@ def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
         fq = open(in_file, 'r')
     elif in_file.endswith('.fq.gz') or in_file.endswith('.fastq.gz'):
         fq = gzip.open(in_file, 'rb')
+    else:
+        sys.exit('Wrong format of input')
 
     total_cnt = 0
     chunk = []
@@ -238,9 +245,11 @@ def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
     prog = ProgressBar()
     prog.update(0)
     finished_chunk = 0
+
     total_reads = 0
     ro_reads = 0
 
+    ccs_seq = {}
     with open('{}/{}.ccs.fa'.format(out_dir, prefix), 'w') as out, \
             open('{}/{}.trimmed.seq'.format(out_dir, prefix), 'w') as trimmed:
         for job in jobs:
@@ -252,10 +261,28 @@ def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
                 ro_reads += 1
                 out.write('>{}\t{}\t{}\n{}\n'.format(header, segments, len(ccs), to_str(ccs)))
                 trimmed.write('>{}\n{}\n'.format(header, trimmed_seq))
+                ccs_seq[header] = [segments, to_str(ccs), trimmed_seq]
 
             finished_chunk += 1
             prog.update(100 * finished_chunk // chunk_cnt)
     prog.update(100)
     pool.join()
 
-    return total_reads, ro_reads
+    return total_reads, ro_reads, ccs_seq
+
+
+def load_ccs_reads(out_dir, prefix):
+    ccs_seq = {}
+    with open('{}/{}.ccs.fa'.format(out_dir, prefix), 'r') as f:
+        for line in f:
+            header = line.rstrip()
+            content = header.split('\t')
+            seq = f.readline().rstrip()
+            ccs_seq[content[0].lstrip('>')] = [content[1], seq]
+
+    with open('{}/{}.trimmed.seq'.format(out_dir, prefix), 'r') as f:
+        for line in f:
+            header = line.rstrip().split('\t')[0].lstrip('>')
+            seq = f.readline().rstrip()
+            ccs_seq[header].append(seq)
+    return ccs_seq
