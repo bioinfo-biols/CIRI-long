@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 import itertools
 
 
@@ -46,3 +47,19 @@ def empty_iter(iterable):
     except StopIteration:
         return None
     return itertools.chain([first], iterable)
+
+
+def grouper(iterable, n, fillvalue=None):
+    from itertools import zip_longest
+    """
+    Collect data info fixed-length chunks or blocks
+    grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx
+    """
+
+    args = [iter(iterable)] * n
+    return zip_longest(*args, fillvalue=None)
+
+
+def tree():
+    from collections import defaultdict
+    return defaultdict(tree)

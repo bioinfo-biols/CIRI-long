@@ -1,16 +1,16 @@
 ## CIRI-long
 
-[![Build Status](https://travis-ci.com/Kevinzjy/CIRI-long.svg?token=sq9vq2uzixNezTJhts8Z&branch=master)](https://travis-ci.org/Kevinzjy/CIRI-long)
+[![Build Status](https://travis-ci.com/Kevinzjy/CIRI-long.svg?token=sq9vq2uzixNezTJhts8Z&branch=master)](https://travis-ci.com/Kevinzjy/CIRI-long)
 [![The MIT License](https://img.shields.io/badge/license-MIT-orange.svg)](https://github.com/Kevinzjy/CIRI-long/blob/master/LICENSE)
 
 Circular RNA Identification for Nanopore Sequencing 
 
 #### Dependency
 
-- gcc 4.8+ or clang 3.4+ and cmake 3.2+ is needed
+- **gcc 4.8+ or clang 3.4+ and cmake 3.2+ is needed**
 - **Only python3 is supported**
 - CIRI-long requires pysam lib, which need executable and header of zlib, bzip2, xz, 
-please refer to documentation of pysam for detailed information
+please refer to documentation of pysam for installation instructions
 - all python dependencies are listed in `requirements.txt`
 
 
