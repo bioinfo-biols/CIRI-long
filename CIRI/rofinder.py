@@ -13,15 +13,17 @@ def find_consensus(header, seq, out_dir, debugging):
     from poa import consensus
 
     # Trim sequence
-    trimmed_seq = trim_primer(seq)
-    if len(trimmed_seq) <= 50:
-        return None, None, None
+    if len(seq) <= 50:
+        return None, None
+    # trimmed_seq = trim_primer(seq)
+    # if len(trimmed_seq) <= 50:
+    #     return None, None, None
 
-    junc_sites = ROF(trimmed_seq)
+    junc_sites = ROF(seq)
     if junc_sites is None:
-        return trimmed_seq, None, None
+        return None, None
 
-    fasta = [('{}-{}'.format(i, j), trimmed_seq[i:j]) for i, j in zip(junc_sites[:-1], junc_sites[1:])]
+    fasta = [('{}-{}'.format(i, j), seq[i:j]) for i, j in zip(junc_sites[:-1], junc_sites[1:])]
 
     # print(header)
     ccs = consensus(fasta)
@@ -43,7 +45,7 @@ def find_consensus(header, seq, out_dir, debugging):
     #             out.write('>{}\n{}\n'.format(label, sequence))
 
     segments = ';'.join(['{}-{}'.format(i, j) for i, j in zip(junc_sites[:-1], junc_sites[1:])])
-    return trimmed_seq, segments, ccs
+    return segments, ccs
 
 
 def ROF(seq, k=11, p_match=0.8, p_indel=0.1, d_min=40, support_min=10):
@@ -180,8 +182,8 @@ def best_hit(seq, seed, start, end):
 def worker(chunk, out_dir, debugging):
     ret = []
     for header, seq in chunk:
-        trimmed_seq, segments, ccs = find_consensus(header, seq, out_dir, debugging)
-        ret.append((header, trimmed_seq, segments, ccs))
+        segments, ccs = find_consensus(header, seq, out_dir, debugging)
+        ret.append((header, seq, segments, ccs))
     return ret
 
 
@@ -251,17 +253,17 @@ def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
 
     ccs_seq = {}
     with open('{}/{}.ccs.fa'.format(out_dir, prefix), 'w') as out, \
-            open('{}/{}.trimmed.seq'.format(out_dir, prefix), 'w') as trimmed:
+            open('{}/{}.raw.fa'.format(out_dir, prefix), 'w') as trimmed:
         for job in jobs:
             ret = job.get()
-            for header, trimmed_seq, segments, ccs in ret:
+            for header, seq, segments, ccs in ret:
                 total_reads += 1
                 if segments is None and ccs is None:
                     continue
                 ro_reads += 1
                 out.write('>{}\t{}\t{}\n{}\n'.format(header, segments, len(ccs), to_str(ccs)))
-                trimmed.write('>{}\n{}\n'.format(header, trimmed_seq))
-                ccs_seq[header] = [segments, to_str(ccs), trimmed_seq]
+                trimmed.write('>{}\n{}\n'.format(header, seq))
+                ccs_seq[header] = [segments, to_str(ccs), seq]
 
             finished_chunk += 1
             prog.update(100 * finished_chunk // chunk_cnt)
@@ -280,7 +282,7 @@ def load_ccs_reads(out_dir, prefix):
             seq = f.readline().rstrip()
             ccs_seq[content[0].lstrip('>')] = [content[1], seq]
 
-    with open('{}/{}.trimmed.seq'.format(out_dir, prefix), 'r') as f:
+    with open('{}/{}.raw.fa'.format(out_dir, prefix), 'r') as f:
         for line in f:
             header = line.rstrip().split('\t')[0].lstrip('>')
             seq = f.readline().rstrip()

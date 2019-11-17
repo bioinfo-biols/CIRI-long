@@ -11,6 +11,8 @@ def trim_primer(seq, primer='AAGCAGTGGTATCAACGCAGAGTAC', last_bases=150):
 
     r_alignments, r_score, r_positions = local_pairwise_align_ssw(DNA(seq[-last_bases:]), DNA(revcomp(primer)))
     r_trim = -last_bases + r_positions[0][0] if r_score >= 25 else len(seq)
+    if r_trim != len(seq) and l_trim != 0:
+        print(r_trim, len(seq))
     return seq[l_trim:r_trim]
 
 

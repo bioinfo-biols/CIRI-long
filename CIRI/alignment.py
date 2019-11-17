@@ -386,8 +386,8 @@ def parse_chunk(chunk, is_canonical):
 
         # Get Cirexons
         cir_exons = get_blocks(tmp_hit)
-        cir_exons[0][0] = tmp_hit.r_st + us_shift - 1 # Trim 1bp for correct boundary of minimap2 alignment
-        cir_exons[-1][-1] = tmp_hit.r_en + ds_shift
+        cir_exons[0][0] = circ_start - 1 # Trim 1bp for correct boundary of minimap2 alignment
+        cir_exons[-1][-1] = circ_end
 
         cir_exon_tag = []
         for cir_exon_start, cir_exon_end, _ in cir_exons:
