@@ -237,6 +237,8 @@ def initializer(aligner, splice_site_index):
 
 def parse_chunk(chunk, is_canonical):
     from CIRI.preprocess import revcomp
+    from Levenshtein import distance
+
     consensus_cnt = 0
     raw_unmapped_cnt = 0
     ccs_mapped_cnt = 0
@@ -244,6 +246,7 @@ def parse_chunk(chunk, is_canonical):
     bsj_cnt = 0
 
     ret = []
+    ccs_dis = []
     for read_id, segments, ccs, raw in chunk:
         # Filter 1 - Remove ccs with strange consensus length
         fasta = []
@@ -253,14 +256,23 @@ def parse_chunk(chunk, is_canonical):
 
         if len(fasta) < 2:
             continue
+
         d_mean = np.mean([len(i) for _, i in fasta[:-1]])
         d_delta = int(2.3 * np.sqrt(0.1 * d_mean))
+        if 0.9 * (d_mean - d_delta) > len(ccs) or 1.1 * (d_mean + d_delta) < len(ccs):
+            continue
 
-        fasta_ccs = msa(fasta)
-        if len(fasta_ccs) > 1:
+        tmp_dis = []
+        for i in fasta[:-1]:
+            tmp_dis.append(distance(i[1], ccs) / len(i[1]))
+        tmp_dis.append(distance(i[1], ccs[:len(i[1])]) / len(i[1]))
+        if np.max(tmp_dis) > 0.1:
             continue
-        if 0.9 * (d_mean - d_delta) > len(fasta_ccs[0]) or 1.1 * (d_mean + d_delta) < len(fasta_ccs[0]):
+
+        fasta_msa = msa(fasta)
+        if len(fasta_msa) > 1:
             continue
+
         consensus_cnt += 1
 
         # Filter 2 - Remove linear mapped reads
@@ -403,6 +415,9 @@ def parse_chunk(chunk, is_canonical):
         circ_seq = tmp if strand == '+' else revcomp(tmp)
 
         ret.append((read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, circ_seq))
+
+    from scipy.stats import describe
+    print(describe(ccs_dis))
 
     return consensus_cnt, raw_unmapped_cnt, ccs_mapped_cnt, accordance_cnt, bsj_cnt, ret
 

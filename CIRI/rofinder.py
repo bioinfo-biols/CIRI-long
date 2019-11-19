@@ -26,7 +26,9 @@ def find_consensus(header, seq, out_dir, debugging):
     fasta = [('{}-{}'.format(i, j), seq[i:j]) for i, j in zip(junc_sites[:-1], junc_sites[1:])]
 
     # print(header)
-    ccs = consensus(fasta)
+    ccs = consensus(fasta, alignment_type=1,
+                    match=10, mismatch=-4, gap=-8, extension=-2, gap_affine=-24, extension_affine=-4,
+                    debug=0)
 
     # if header == 'cadf05aa-2c1d-4878-a1d4-8c8a5f9cec08':
     #     print(header)
@@ -107,6 +109,7 @@ def ROF(seq, k=11, p_match=0.8, p_indel=0.1, d_min=40, support_min=10):
     sorted_kmers = sorted(list(kmer_occ), key=lambda x: (len(kmer_occ[x]), -kmer_occ[x][0]), reverse=True)
     occ_max = len(kmer_occ[sorted_kmers[0]])
 
+    # Find junctions
     cand_junc = []
     for kmer in sorted_kmers:
         if len(kmer_occ[kmer]) != occ_max:

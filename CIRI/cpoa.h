@@ -2,7 +2,8 @@
 #include "spoa/spoa.hpp"
 using namespace std;
 
-static inline char *fasta_to_ccs(vector<string> sequences) {
+static inline char *fasta_to_ccs(vector<string> sequences,
+	int l, int m, int n, int g, int e, int q, int c, int v) {
 
 //    vector<string> sequences = {
 //        "TGTGTCTGTGTGTATGGCTGTGTCTATGTGTAGCTGTGTATGTGTGGCTGTGTGTATGTGGCTGTGTGTGTCTGTGTCTGTGTCTGTGTGTGTCTGTGTGTGTGTCTCTGTGTG",
@@ -12,14 +13,14 @@ static inline char *fasta_to_ccs(vector<string> sequences) {
 //        "TGTGTCTGTGTGTGTCTGTGTGTGTGTGTCTCTGTGTGTGTGTGTCTGTGTGTATGGCT",
 //    };
 
-    int l = 1;
-    int m = 5;
-    int n = -4;
-    int g = -8;
-    int e = -6;
+//    int l = 0;
+//    int m = 5;
+//    int n = -4;
+//    int g = -8;
+//    int e = -6;
 
     auto alignment_engine = spoa::createAlignmentEngine(static_cast<spoa::AlignmentType>(l),
-        m, n, g, e);
+        m, n, g, e, q, c);
 
     auto graph = spoa::createGraph();
 
@@ -30,16 +31,19 @@ static inline char *fasta_to_ccs(vector<string> sequences) {
 
     string consensus = graph->generate_consensus();
 
-//    fprintf(stderr, "Consensus (%zu)\n", consensus.size());
-//    fprintf(stderr, "%s\n", consensus.c_str());
-//
-//    vector<string> msa;
-//    graph->generate_multiple_sequence_alignment(msa);
-//
-//    fprintf(stderr, "Multiple sequence alignment\n");
-//    for (const auto& it: msa) {
-//        fprintf(stderr, "%s\n", it.c_str());
-//    }
+	if (v==1) {
+		fprintf(stderr, "Consensus (%zu)\n", consensus.size());
+		fprintf(stderr, "%s\n", consensus.c_str());
+
+		vector<string> msa;
+		graph->generate_multiple_sequence_alignment(msa);
+
+		fprintf(stderr, "Multiple sequence alignment\n");
+		for (const auto& it: msa) {
+			fprintf(stderr, "%s\n", it.c_str());
+		}
+	}
+
 	char *cons_str;
 	cons_str = new char [consensus.size() + 1];
 	strcpy (cons_str, consensus.c_str());
