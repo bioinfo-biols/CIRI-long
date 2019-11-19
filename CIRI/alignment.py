@@ -295,7 +295,7 @@ def parse_chunk(chunk, is_canonical):
             raw_en, raw_st = None, None
 
         # Filter 3 - Remove reads that ccs doesn't mapped to genome
-        ccs_hit = None
+        ccs_hit = NoneW
         for hit in ALIGNER.map(ccs):
             if hit.is_primary:
                 ccs_hit = hit
@@ -415,9 +415,6 @@ def parse_chunk(chunk, is_canonical):
         circ_seq = tmp if strand == '+' else revcomp(tmp)
 
         ret.append((read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, circ_seq))
-
-    from scipy.stats import describe
-    print(describe(ccs_dis))
 
     return consensus_cnt, raw_unmapped_cnt, ccs_mapped_cnt, accordance_cnt, bsj_cnt, ret
 
