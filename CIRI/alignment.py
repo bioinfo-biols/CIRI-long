@@ -295,7 +295,7 @@ def parse_chunk(chunk, is_canonical):
             raw_en, raw_st = None, None
 
         # Filter 3 - Remove reads that ccs doesn't mapped to genome
-        ccs_hit = NoneW
+        ccs_hit = None
         for hit in ALIGNER.map(ccs):
             if hit.is_primary:
                 ccs_hit = hit
