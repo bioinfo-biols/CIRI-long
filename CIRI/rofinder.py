@@ -19,7 +19,13 @@ def find_consensus(header, seq, out_dir, debugging):
     # if len(trimmed_seq) <= 50:
     #     return None, None, None
 
-    junc_sites = ROF(seq)
+    tscp_id, gene_id, circ_id, strand, read_info = header.split('|') #
+    circ_len, pos, is_aligned, seq_index, is_forward, head, middle, tail = read_info.split('_') #
+    if int(middle) < int(circ_len) + 20: #
+        return None, None #
+    cov = int(middle) / int(circ_len) #
+
+    junc_sites = ROF(header, seq)
     if junc_sites is None:
         return None, None
 
@@ -46,11 +52,17 @@ def find_consensus(header, seq, out_dir, debugging):
     #         for label, sequence in fasta:
     #             out.write('>{}\n{}\n'.format(label, sequence))
 
+    ccs_cov = (int(junc_sites[-1]) - int(junc_sites[0])) / len(ccs) #
+    if 0.9 * (len(ccs) - 2.3 * np.sqrt(0.1 * len(ccs))) <= len(ccs) <= 1.1 * (len(ccs) + 2.3 * np.sqrt(0.1 * len(ccs))) or int(ccs_cov) == int(cov):
+        pass
+    else:
+        print(header)
+
     segments = ';'.join(['{}-{}'.format(i, j) for i, j in zip(junc_sites[:-1], junc_sites[1:])])
     return segments, ccs
 
 
-def ROF(seq, k=11, p_match=0.8, p_indel=0.1, d_min=40, support_min=10):
+def ROF(header, seq, k=11, p_match=0.8, p_indel=0.1, d_min=40, support_min=2):
     """
     Circular Finder
 
@@ -124,6 +136,7 @@ def ROF(seq, k=11, p_match=0.8, p_indel=0.1, d_min=40, support_min=10):
 
     final_junc = sorted(cand_junc, key=lambda x: (len(x), -x[0]), reverse=True)[0]
 
+    # Head and tail in 100 bp region
     while final_junc[0] >= 15:
         if tuple_dis_mean < final_junc[0]:
             x, score = best_hit(seq, seq[final_junc[0]:final_junc[0] + k],

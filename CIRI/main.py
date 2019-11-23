@@ -55,7 +55,7 @@ def main():
     logger.info('Multi threads: {}'.format(args.threads))
 
     # Scan for repeats and CCS
-    if os.path.exists('{}/{}.ccs.fa'.format(out_dir, prefix)) and os.path.exists('{}/{}.raw.fa'.format(out_dir, prefix)):
+    if not debugging and os.path.exists('{}/{}.ccs.fa'.format(out_dir, prefix)) and os.path.exists('{}/{}.raw.fa'.format(out_dir, prefix)):
         logger.info('Step 1 - Loading circRNA candidates in previous run')
         ccs_seq = load_ccs_reads(out_dir, prefix)
         reads_count = {

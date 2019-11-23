@@ -262,12 +262,12 @@ def parse_chunk(chunk, is_canonical):
         if 0.9 * (d_mean - d_delta) > len(ccs) or 1.1 * (d_mean + d_delta) < len(ccs):
             continue
 
-        tmp_dis = []
-        for i in fasta[:-1]:
-            tmp_dis.append(distance(i[1], ccs) / len(i[1]))
-        tmp_dis.append(distance(i[1], ccs[:len(i[1])]) / len(i[1]))
-        if np.max(tmp_dis) > 0.1:
-            continue
+        # tmp_dis = []
+        # for i in fasta[:-1]:
+        #     tmp_dis.append(distance(i[1], ccs) / len(i[1]))
+        # tmp_dis.append(distance(i[1], ccs[:len(i[1])]) / len(i[1]))
+        # if np.max(tmp_dis) > 0.1:
+        #     continue
 
         fasta_msa = msa(fasta)
         if len(fasta_msa) > 1:
