@@ -16,6 +16,9 @@ def test_poa():
     ccs = poa.consensus(fasta, 1,
                         10, -4, -8, -2, -24, -1,
                         debug=1)
+    # ccs = poa.consensus(fasta, 1,
+    #                     2, -4, -4, -2, -24, -1,
+    #                     debug=1)
     print(ccs)
 
 

@@ -23,8 +23,8 @@ def main():
                         help='Output sample prefix, default: CIRI-long', )
     parser.add_argument('-a', '--anno', dest='gtf', metavar='GTF', default=None,
                         help='Genome reference gtf', )
-    parser.add_argument('--canonical', dest='canonical', default=True, action='store_true',
-                        help='Use canonical splice signal (GT/AG) only, default: True')
+    parser.add_argument('--canonical', dest='canonical', default=False, action='store_true',
+                        help='Use canonical splice signal (GT/AG) only, default: False')
     parser.add_argument('-t', '--threads', dest='threads', metavar='INT', default=os.cpu_count(),
                         help='Number of threads', )
     parser.add_argument('--debug', dest='debug', default=False, action='store_true',
@@ -33,14 +33,14 @@ def main():
                         version='%(prog)s {version}'.format(version=__version__))
     args = parser.parse_args()
 
-    if args.input is None or args.output is None or args.gtf is None:
+    if args.input is None or args.output is None:
         sys.exit('Please provide input and output file, run CIRI-long using -h or --help for detailed information.')
     if args.mmi is None:
         sys.exit('Please specific minimap2 index or reference fasta')
 
     # Check parameters
     in_file = check_file(args.input)
-    gtf_file = check_file(args.gtf)
+    gtf_file = None if args.gtf is None else check_file(args.gtf)
     out_dir = check_dir(args.output)
     minimap_index = check_file(args.mmi)
     check_dir(out_dir + '/tmp')
@@ -55,7 +55,7 @@ def main():
     logger.info('Multi threads: {}'.format(args.threads))
 
     # Scan for repeats and CCS
-    if not debugging and os.path.exists('{}/{}.ccs.fa'.format(out_dir, prefix)) and os.path.exists('{}/{}.raw.fa'.format(out_dir, prefix)):
+    if os.path.exists('{}/{}.ccs.fa'.format(out_dir, prefix)) and os.path.exists('{}/{}.raw.fa'.format(out_dir, prefix)):
         logger.info('Step 1 - Loading circRNA candidates in previous run')
         ccs_seq = load_ccs_reads(out_dir, prefix)
         reads_count = {
@@ -70,15 +70,19 @@ def main():
         }
 
     # generate index of splice site and annotation
-    idx_file = out_dir + '/tmp/ss.idx'
-    if os.path.exists(idx_file):
-        logger.info('Loading pre-built splice site index from: {}'.format(idx_file))
-        with open(idx_file, 'rb') as idx:
-            gtf_idx, ss_idx = pickle.load(idx)
+    if gtf_file is None:
+        logger.warn('No genome annotation provided, entering \'De novo\' mode')
+        gtf_idx, ss_idx = None, None
     else:
-        gtf_idx, ss_idx = index_annotation(gtf_file)
-        with open(idx_file, 'wb') as idx:
-            pickle.dump([gtf_idx, ss_idx], idx)
+        idx_file = out_dir + '/tmp/ss.idx'
+        if os.path.exists(idx_file):
+            logger.info('Loading pre-built splice site index from: {}'.format(idx_file))
+            with open(idx_file, 'rb') as idx:
+                gtf_idx, ss_idx = pickle.load(idx)
+        else:
+            gtf_idx, ss_idx = index_annotation(gtf_file)
+            with open(idx_file, 'wb') as idx:
+                pickle.dump([gtf_idx, ss_idx], idx)
 
     # Find circRNAs
     logger.info('Step 2 - Candidate reads alignment & filter')
@@ -86,16 +90,16 @@ def main():
     reads_count.update(tmp_cnt)
 
     logger.info('All Finished!')
-    logger.debug('Summary:')
+    logger.info('Summary:')
     if 'Total' in reads_count:
-        logger.debug('Total Reads: {}'.format(reads_count['Total']))
-    logger.debug('Cyclic Tandem Repeats: {}'.format(reads_count['with_repeats']))
-    logger.debug('Consensus: {}'.format(reads_count['consensus']))
-    logger.debug('Raw unmapped: {}'.format(reads_count['raw_unmapped']))
-    logger.debug('CCS mapped: {}'.format(reads_count['ccs_mapped']))
-    logger.debug('CCS & Raw aligned concordantly: {}'.format(reads_count['accordance']))
-    logger.debug('BSJ: {}'.format(reads_count['bsj']))
-    logger.debug('Splice signal: {}'.format(reads_count['splice_signal']))
+        logger.info('Total Reads: {}'.format(reads_count['Total']))
+    logger.info('Cyclic Tandem Repeats: {}'.format(reads_count['with_repeats']))
+    logger.info('Consensus: {}'.format(reads_count['consensus']))
+    logger.info('Raw unmapped: {}'.format(reads_count['raw_unmapped']))
+    logger.info('CCS mapped: {}'.format(reads_count['ccs_mapped']))
+    logger.info('CCS & Raw aligned concordantly: {}'.format(reads_count['accordance']))
+    logger.info('BSJ: {}'.format(reads_count['bsj']))
+    logger.info('Splice signal: {}'.format(reads_count['splice_signal']))
 
 
 if __name__ == '__main__':

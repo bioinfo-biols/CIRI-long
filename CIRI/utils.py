@@ -60,6 +60,14 @@ def grouper(iterable, n, fillvalue=None):
     return zip_longest(*args, fillvalue=None)
 
 
+def pairwise(iterable):
+    from itertools import tee
+    "s -> (s0,s1), (s1,s2), (s2, s3), ..."
+    a, b = tee(iterable)
+    next(b, None)
+    return zip(a, b)
+
+
 def tree():
     from collections import defaultdict
     return defaultdict(tree)

@@ -5,7 +5,7 @@
       <paths name="zhangjy@10.4.0.140:22">
         <serverdata>
           <mappings>
-            <mapping deploy="/CIRI-long" local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/home/zhangjy/git/CIRI-long" local="$PROJECT_DIR$" />
           </mappings>
         </serverdata>
       </paths>

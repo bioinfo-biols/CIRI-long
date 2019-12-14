@@ -32,11 +32,16 @@ ATTR = {
 }
 
 SPLICE_SIGNAL = {
-    ('GT', 'AG'): 0,  # U2-type
-    ('GC', 'AG'): 1,  # U2-type
-    ('AT', 'AC'): 1,  # U12-type
-    ('GA', 'AG'): 2,  # non-canonical
-    ('GT', 'TG'): 2,  # non-canonical
+    ('GT', 'AG'): 0, # U2-type
+    ('GC', 'AG'): 1, # U2-type
+    ('AT', 'AC'): 2, # U12-type
+    ('GT', 'TG'): 3, # non-canonical
+    ('AT', 'AG'): 3, # non-canonical
+    ('GA', 'AG'): 3, # non-canonical
+    ('GG', 'AG'): 3, # non-canonical
+    ('GT', 'GG'): 3, # non-canonical
+    ('GT', 'AT'): 4, # non-canonical
+    ('GT', 'AA'): 4, # non-canonical
 }
 
 
@@ -85,10 +90,10 @@ def index_annotation(gtf):
                 splice_site_index[parser.contig][parser.start][parser.strand] = 1
                 splice_site_index[parser.contig][parser.end][parser.strand] = 1
 
-            if parser.attr('gene_biotype') is None or parser.attr('gene_biotype') in ['lincRNA', 'pseudogene']:
-                continue
-            if parser.attr('gene_type') is None or parser.attr('gene_type') in ['lincRNA', 'pseudogene']:
-                continue
+            # if parser.attr('gene_biotype') is None or parser.attr('gene_biotype') in ['lincRNA', 'pseudogene']:
+            #     continue
+            # if parser.attr('gene_type') is None or parser.attr('gene_type') in ['lincRNA', 'pseudogene']:
+            #     continue
 
             # Binned index
             start_div, end_div = parser.start // 500, parser.end // 500
@@ -143,46 +148,68 @@ def get_blocks(hit):
     return r_block
 
 
-def search_splice_signal(contig, start, end, search_length=10, shift_threshold=3):
-    from operator import itemgetter
-    us_seq = ALIGNER.seq(contig, start - search_length - 2, start + search_length)
-    ds_seq = ALIGNER.seq(contig, end - search_length, end + search_length + 2)
+def search_splice_signal(contig, start, end, q_head, q_tail, search_length=10, shift_threshold=3):
+    # Zero: Find free sliding region
+    # start | real_start <-> end | real_end
+    ds_free = 0
+    for i in range(100):
+        if ALIGNER.seq(contig, start, start + i) == ALIGNER.seq(contig, end, end + i):
+            ds_free = i
+        else:
+            break
 
-    get_ss = itemgetter(0, 1, 2, 3)
+    us_free = 0
+    for j in range(100):
+        if ALIGNER.seq(contig, start - j, start) == ALIGNER.seq(contig, end - j, end):
+            us_free = j
+        else:
+            break
+
+    # Splice site: site_id, strand, us_shift, ds_shift, site_weight, altered_len, altered_total
     # First: Find flanking junction from annotation gtf
-    anno_ss = []
-    for strand in ['+', '-']:
-        tmp_us_sites = []
-        for us_shift in range(-search_length, search_length):
-            us_pos = start + us_shift
-            if contig in SS_INDEX and us_pos in SS_INDEX[contig] and strand in SS_INDEX[contig][us_pos]:
-                tmp_us_sites.append(us_shift)
+    if SS_INDEX is not None:
+        anno_ss = []
+        for strand in ['+', '-']:
+            tmp_us_sites = []
+            for us_shift in range(-search_length, search_length):
+                us_pos = start + us_shift
+                if contig in SS_INDEX and us_pos in SS_INDEX[contig] and strand in SS_INDEX[contig][us_pos]:
+                    tmp_us_sites.append(us_shift - 1)
 
-        tmp_ds_sites = []
-        for ds_shift in range(-search_length, search_length):
-            ds_pos = end + ds_shift
-            if contig in SS_INDEX and ds_pos in SS_INDEX[contig] and strand in SS_INDEX[contig][ds_pos]:
-                tmp_ds_sites.append(ds_shift)
+            tmp_ds_sites = []
+            for ds_shift in range(-search_length, search_length):
+                ds_pos = end + ds_shift
+                if contig in SS_INDEX and ds_pos in SS_INDEX[contig] and strand in SS_INDEX[contig][ds_pos]:
+                    tmp_ds_sites.append(ds_shift)
 
-        if len(tmp_us_sites) == 0 or len(tmp_ds_sites) == 0:
-            continue
+            if len(tmp_us_sites) == 0 or len(tmp_ds_sites) == 0:
+                continue
 
-        for i in tmp_us_sites:
-            for j in tmp_ds_sites:
-                if abs(i - j) > shift_threshold:
-                    continue
-                us_ss = ALIGNER.seq(contig, start + i - 2 - 1, start + i - 1)
-                ds_ss = ALIGNER.seq(contig, end + j, end + j + 2)
-                if strand == '-':
-                    us_ss, ds_ss = mp.revcomp(ds_ss), mp.revcomp(us_ss)
-                ss_id = '{}-{}|{}-{}'.format(us_ss, ds_ss, i, j)
-                ss_weight = SPLICE_SIGNAL[(ds_ss, us_ss)] if (ds_ss, us_ss) in SPLICE_SIGNAL else 3
-                anno_ss.append((ss_id, strand, i, j, ss_weight, abs(i - j), abs(i) + abs(j)))
+            for i in tmp_us_sites:
+                for j in tmp_ds_sites:
+                    if abs(i - j) > shift_threshold:
+                        continue
+                    us_ss = ALIGNER.seq(contig, start + i - 2, start + i)
+                    ds_ss = ALIGNER.seq(contig, end + j, end + j + 2)
+                    if strand == '-':
+                        us_ss, ds_ss = mp.revcomp(ds_ss), mp.revcomp(us_ss)
+                    ss_id = '{}-{}|{}-{}'.format(us_ss, ds_ss, i, j)
+                    ss_weight = SPLICE_SIGNAL[(ds_ss, us_ss)] if (ds_ss, us_ss) in SPLICE_SIGNAL else 3
+                    anno_ss.append((
+                        ss_id, strand, i, j, ss_weight,
+                        abs(i - j),
+                        min(abs(i - ds_free), abs(i - us_free)) + min(abs(j - ds_free), abs(j - us_free)),
+                    ))
 
-    if len(anno_ss) > 0:
-        return get_ss(sorted(anno_ss, key=itemgetter(4, 5, 6))[0])
+        if len(anno_ss) > 0:
+            return sort_splice_sites(anno_ss, us_free, ds_free, q_head, q_tail), us_free, ds_free
 
     # Second: Find Denovo BSJ using pre-defined splice signal
+    us_search_length = search_length + us_free
+    ds_search_length = search_length + ds_free
+    us_seq = ALIGNER.seq(contig, start - us_search_length - 2, start + ds_search_length)
+    ds_seq = ALIGNER.seq(contig, end - us_search_length, end + ds_search_length + 2)
+
     putative_ss = []
     for strand in ['+', '-']:
         for (ds_ss, us_ss), ss_weight in SPLICE_SIGNAL.items():
@@ -218,15 +245,42 @@ def search_splice_signal(contig, start, end, search_length=10, shift_threshold=3
                 for j in tmp_ds_sites:
                     if abs(i - j) > shift_threshold:
                         continue
-                    us_shift = i - search_length
-                    ds_shift = j - search_length
-                    putative_ss.append(('{}|{}-{}'.format(ss_id, us_shift, ds_shift), strand, us_shift,
-                                        ds_shift, ss_weight, abs(i - j), abs(us_shift) + abs(ds_shift)))
+                    us_shift = i - us_search_length
+                    ds_shift = j - us_search_length
+                    putative_ss.append((
+                        '{}|{}-{}'.format(ss_id, us_shift, ds_shift), strand, us_shift, ds_shift,
+                        ss_weight,
+                        abs(i - j),
+                        min(abs(us_shift - ds_free), abs(us_shift - us_free)) + min(abs(ds_shift - ds_free), abs(ds_shift - us_free)),
+                    ))
 
-    if len(putative_ss) == 0:
-        return None
+    if len(putative_ss) > 0:
+        return sort_splice_sites(putative_ss, us_free, ds_free, q_head, q_tail), us_free, ds_free
 
-    return get_ss(sorted(putative_ss, key=itemgetter(4, 5, 6))[0])
+    return None, us_free, ds_free
+
+
+def sort_splice_sites(sites, us, ds, q_head, q_tail):
+    # Splice site: site_id, strand, us_shift, ds_shift, site_weight, altered_len, altered_total
+    from operator import itemgetter
+    get_ss = itemgetter(0, 1, 2, 3)
+
+    # Confidential splice sites
+    confident_sites = [i for i in sites if -us <= i[2] <= ds and -us <= i[3] <= ds]
+    if len(confident_sites) > 0:
+        return get_ss(sorted(confident_sites, key=itemgetter(5, 4, 6))[0])
+
+    # Ambiguous splice sites
+    ambiguous_base = q_head + q_tail
+    ambiguous_sites = [i for i in set(sites) - set(confident_sites) if -ambiguous_base <= i[2] <= 0 <= i[3] <= ambiguous_base]
+    if len(ambiguous_sites) > 0:
+        return get_ss(sorted(ambiguous_sites, key=itemgetter(4, 5, 6))[0])
+
+    # Other sites
+    normal_sites = set(sites) - set(confident_sites) - set(ambiguous_sites)
+    if len(normal_sites) > 0:
+        return get_ss(sorted(normal_sites, key=itemgetter(4, 5, 6))[0])
+    return None
 
 
 def initializer(aligner, splice_site_index):
@@ -237,17 +291,19 @@ def initializer(aligner, splice_site_index):
 
 def parse_chunk(chunk, is_canonical):
     from CIRI.preprocess import revcomp
-    from Levenshtein import distance
 
     consensus_cnt = 0
     raw_unmapped_cnt = 0
     ccs_mapped_cnt = 0
     accordance_cnt = 0
     bsj_cnt = 0
+    signal_cnt = 0
 
     ret = []
-    ccs_dis = []
     for read_id, segments, ccs, raw in chunk:
+        # if read_id not in ['ENSMUST00000112106|ENSMUSG00000042323|14:31025498-31027530|+|236_163_aligned_43562_R_42_325_16',]:
+        #     continue
+
         # Filter 1 - Remove ccs with strange consensus length
         fasta = []
         for pos in segments.split(';'):
@@ -261,13 +317,6 @@ def parse_chunk(chunk, is_canonical):
         d_delta = int(2.3 * np.sqrt(0.1 * d_mean))
         if 0.9 * (d_mean - d_delta) > len(ccs) or 1.1 * (d_mean + d_delta) < len(ccs):
             continue
-
-        # tmp_dis = []
-        # for i in fasta[:-1]:
-        #     tmp_dis.append(distance(i[1], ccs) / len(i[1]))
-        # tmp_dis.append(distance(i[1], ccs[:len(i[1])]) / len(i[1]))
-        # if np.max(tmp_dis) > 0.1:
-        #     continue
 
         fasta_msa = msa(fasta)
         if len(fasta_msa) > 1:
@@ -307,6 +356,11 @@ def parse_chunk(chunk, is_canonical):
         seg_st = int(segments.split(';')[0].split('-')[0])
         seg_en = int(segments.split(';')[-1].split('-')[1])
 
+        # Remove CCS that not start from tailed end
+        if seg_st > 100 or seg_en < len(raw) - 100:
+            continue
+
+        # Align head and tail
         seg_st_hit = None
         for hit in ALIGNER.map(raw[:seg_st]):
             if hit.is_primary:
@@ -337,36 +391,42 @@ def parse_chunk(chunk, is_canonical):
         else:
             pass
 
-        # Remove CCS that not start from tailed end
-        if seg_st > 15 or seg_en < len(raw) - 15:
-            continue
-
         accordance_cnt += 1
 
         # Filter 5 - Find BSJ site in CCS
         tmp = ccs
         tmp_junc = 0
-        iter_num = 0
+        last_m = 0
+        last_junc = 0
+
+        itered_junc = {}
         while True:
-            iter_num += 1
             tmp_hits = [hit for hit in ALIGNER.map(tmp) if hit.is_primary]
             if len(tmp_hits) == 0:
                 break
             tmp_hit = sorted(tmp_hits, key=lambda x: x.mlen, reverse=True)[0]
+            if tmp_hit.mlen < last_m:
+                tmp_junc = last_junc
+                break
+            last_m = tmp_hit.mlen
+            last_junc = tmp_junc
+            # print('{}/{}'.format(tmp_junc, len(ccs)), tmp_hit)
 
-            if tmp_hit.q_st < 10 < len(tmp) - tmp_hit.q_en:
-                tmp_junc = (tmp_junc + tmp_hit.q_en) % len(tmp)
-                tmp = ccs[tmp_junc:] + ccs[:tmp_junc]
-            elif tmp_hit.q_st > 10 > len(tmp) - tmp_hit.q_en:
-                tmp_junc = (tmp_junc + tmp_hit.q_st) % len(tmp)
-                tmp = ccs[tmp_junc:] + ccs[:tmp_junc]
+            st_clip = tmp_hit.q_st
+            en_clip = len(tmp) - tmp_hit.q_en
+            if st_clip == 0 and en_clip == 0:
+                break
+
+            if st_clip >= en_clip:
+                tmp_junc = (tmp_junc + st_clip) % len(ccs)
             else:
-                break
-            if iter_num >= 10:
+                tmp_junc = (tmp_junc - en_clip) % len(ccs)
+
+            if tmp_junc in itered_junc:
                 break
 
-        if iter_num >= 10:
-            continue
+            tmp = ccs[tmp_junc:] + ccs[:tmp_junc]
+            itered_junc[tmp_junc] = 1
 
         # CCS aligned more than 90%
         tmp_hits = []
@@ -376,14 +436,20 @@ def parse_chunk(chunk, is_canonical):
         if len(tmp_hits) == 0:
             continue
         tmp_hit = sorted(tmp_hits, key=lambda x: x.mlen, reverse=True)[0]
-        if tmp_hit.r_en - tmp_hit.r_st < 0.9 * len(ccs):
+        if tmp_hit.q_en - tmp_hit.q_st < 0.9 * len(ccs):
             continue
         bsj_cnt += 1
 
         # Retrive circRNA positions, convert minimap2 position to real position
-        ss_site = search_splice_signal(tmp_hit.ctg, tmp_hit.r_st, tmp_hit.r_en)
+        ss_site, us_free, ds_free = search_splice_signal(tmp_hit.ctg, tmp_hit.r_st, tmp_hit.r_en,
+                                                         tmp_hit.q_st, len(ccs) - tmp_hit.q_en)
         if ss_site is None:
+            # Keep reads that seemed to generate from circRNAs, but cannot get splice signal
+            if not is_canonical:
+                ret.append((read_id, '{}:{}-{}'.format(tmp_hit.ctg, tmp_hit.r_st + 1, tmp_hit.r_en),
+                            'NA', 'NA', 'NA', tmp_hit.q_st, len(ccs) - tmp_hit.q_en, tmp))
             continue
+
         ss_id, strand, us_shift, ds_shift = ss_site
 
         # if is_canonical: keep canonical splice site only
@@ -394,12 +460,16 @@ def parse_chunk(chunk, is_canonical):
         circ_ctg = tmp_hit.ctg
         circ_start = tmp_hit.r_st + us_shift
         circ_end = tmp_hit.r_en + ds_shift
-        circ_id = '{}:{}-{}'.format(circ_ctg, circ_start, circ_end)
+        circ_id = '{}:{}-{}'.format(circ_ctg, circ_start + 1, circ_end)
+
+        # if read_id.split('|')[2] != circ_id:
+        #     print(read_id)
+        # print(tmp_hit.ctg, tmp_hit.r_st, tmp_hit.r_en, len(tmp), tmp_hit.q_st, tmp_hit.q_en)
 
         # Get Cirexons
         cir_exons = get_blocks(tmp_hit)
-        cir_exons[0][0] = circ_start - 1 # Trim 1bp for correct boundary of minimap2 alignment
-        cir_exons[-1][-1] = circ_end
+        cir_exons[0][0] = circ_start # Trim 1bp for correct boundary of minimap2 alignment
+        cir_exons[-1][1] = circ_end
 
         cir_exon_tag = []
         for cir_exon_start, cir_exon_end, _ in cir_exons:
@@ -412,11 +482,20 @@ def parse_chunk(chunk, is_canonical):
             #     cir_exon_tag.append('{}-{}|{}'.format(cir_exon_start))
             # cir_exon_tag.append('{}-{}|{}|{}'.format(cir_exon_start, cir_exon_end, strand, ss_id))
 
-        circ_seq = tmp if strand == '+' else revcomp(tmp)
+        # BSJ correction for 5' prime region
+        if strand == '+':
+            correction_shift = min(max(us_shift, us_free), ds_free)
+            circ_seq = tmp[correction_shift:] + tmp[:correction_shift]
+        else:
+            correction_shift = min(max(ds_shift, us_free), ds_free)
+            circ_seq = revcomp(tmp[correction_shift:] + tmp[:correction_shift])
 
-        ret.append((read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, circ_seq))
+        ret.append((
+            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, tmp_hit.q_st, len(ccs) - tmp_hit.q_en, circ_seq
+        ))
+        signal_cnt += 1
 
-    return consensus_cnt, raw_unmapped_cnt, ccs_mapped_cnt, accordance_cnt, bsj_cnt, ret
+    return consensus_cnt, raw_unmapped_cnt, ccs_mapped_cnt, accordance_cnt, bsj_cnt, signal_cnt, ret
 
 
 def filter_ccs_reads(ccs_seq, minimap_index, ss_indx, is_canonical, out_dir, prefix, threads, debugging):
@@ -433,7 +512,7 @@ def filter_ccs_reads(ccs_seq, minimap_index, ss_indx, is_canonical, out_dir, pre
         'splice_signal': 0,
     }
 
-    minimap_aligner = mp.Aligner(minimap_index, preset='splice')
+    minimap_aligner = mp.Aligner(minimap_index, n_threads=threads, preset='splice')
 
     chunk_size = 250
     chunk_cnt = 0
@@ -452,17 +531,20 @@ def filter_ccs_reads(ccs_seq, minimap_index, ss_indx, is_canonical, out_dir, pre
         for job in jobs:
             finished_cnt += 1
 
-            tmp_consensus, tmp_raw_unmapped, tmp_ccs_mapped, tmp_accordance, tmp_bsj, ret = job.get()
+            tmp_consensus, tmp_raw_unmapped, tmp_ccs_mapped, tmp_accordance, tmp_bsj, tmp_signal, ret = job.get()
             reads_count['consensus'] += tmp_consensus
             reads_count['raw_unmapped'] += tmp_raw_unmapped
             reads_count['ccs_mapped'] += tmp_ccs_mapped
             reads_count['accordance'] += tmp_accordance
             reads_count['bsj'] += tmp_bsj
-            reads_count['splice_signal'] += len(ret)
+            reads_count['splice_signal'] += tmp_signal
 
-            for read_id, circ_id, strand, cir_exon_tag, ss_id, circ_seq in ret:
-                out.write('>{}\t{}\t{}\t{}\t{}\n{}\n'.format(read_id, circ_id, strand, cir_exon_tag, ss_id, circ_seq))
+            for read_id, circ_id, strand, cir_exon_tag, ss_id, head, tail, circ_seq in ret:
+                out.write('>{}\t{}\t{}\t{}\t{}\t{}:{}:{}\n{}\n'.format(
+                    read_id, circ_id, strand, cir_exon_tag, ss_id, head, tail, len(circ_seq), circ_seq
+                ))
             prog.update(100 * finished_cnt / chunk_cnt)
+
     pool.join()
     prog.update(100)
 

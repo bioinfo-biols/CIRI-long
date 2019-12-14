@@ -14,52 +14,36 @@ def find_consensus(header, seq, out_dir, debugging):
 
     # Trim sequence
     if len(seq) <= 50:
-        return None, None
-    # trimmed_seq = trim_primer(seq)
-    # if len(trimmed_seq) <= 50:
-    #     return None, None, None
+        return None, None, None
 
-    tscp_id, gene_id, circ_id, strand, read_info = header.split('|') #
-    circ_len, pos, is_aligned, seq_index, is_forward, head, middle, tail = read_info.split('_') #
-    if int(middle) < int(circ_len) + 20: #
-        return None, None #
-    cov = int(middle) / int(circ_len) #
+    # Repeat segments
+    chains = None
+    is_circular = 0
+    for k in [11, 9, 7]:
+        tmp_chain, tmp_circular = ROF(header, seq, k=k)
+        if tmp_chain is None:
+            continue
+        if tmp_circular == 1:
+            chains = tmp_chain
+            is_circular = 1
+            break
+        elif chains is None:
+            chains = tmp_chain
+        else:
+            pass
+    if chains is None:
+        return None, None, None
 
-    junc_sites = ROF(header, seq)
-    if junc_sites is None:
-        return None, None
-
-    fasta = [('{}-{}'.format(i, j), seq[i:j]) for i, j in zip(junc_sites[:-1], junc_sites[1:])]
-
-    # print(header)
+    fasta = [('{}-{}'.format(s, e), seq[s:e]) for s, e in chains]
     ccs = consensus(fasta, alignment_type=1,
                     match=10, mismatch=-4, gap=-8, extension=-2, gap_affine=-24, extension_affine=-4,
                     debug=0)
-
-    # if header == 'cadf05aa-2c1d-4878-a1d4-8c8a5f9cec08':
+    # if header == 'ENSMUST00000177117|ENSMUSG00000021546|13:58395270-58396899|-|211_544_aligned_43648_R_28_1692_15':
     #     print(header)
 
-    # poa_graph = partial_order_alignment(fasta)
-    # ccs_reads = [''.join(i[1]) for i in poa_graph.allConsenses()]
-    # ccs = sorted(ccs_reads, key=lambda x: len(x), reverse=True)[0]
+    segments = ';'.join(['{}-{}'.format(s, e) for s, e in chains])
 
-    # if debugging is True:
-    #     alignments = poa_graph.generateAlignmentStrings()
-    #     with open('{}/tmp/{}.msa'.format(out_dir, header), 'w') as out:
-    #         for label, alignstring in alignments:
-    #             out.write("{0:15s} {1:s}\n".format(label, alignstring))
-    #     with open('{}/tmp/{}.fa'.format(out_dir, header), 'w') as out:
-    #         for label, sequence in fasta:
-    #             out.write('>{}\n{}\n'.format(label, sequence))
-
-    ccs_cov = (int(junc_sites[-1]) - int(junc_sites[0])) / len(ccs) #
-    if 0.9 * (len(ccs) - 2.3 * np.sqrt(0.1 * len(ccs))) <= len(ccs) <= 1.1 * (len(ccs) + 2.3 * np.sqrt(0.1 * len(ccs))) or int(ccs_cov) == int(cov):
-        pass
-    else:
-        print(header)
-
-    segments = ';'.join(['{}-{}'.format(i, j) for i, j in zip(junc_sites[:-1], junc_sites[1:])])
-    return segments, ccs
+    return segments, ccs, is_circular
 
 
 def ROF(header, seq, k=11, p_match=0.8, p_indel=0.1, d_min=40, support_min=2):
@@ -106,61 +90,61 @@ def ROF(header, seq, k=11, p_match=0.8, p_indel=0.1, d_min=40, support_min=2):
                 tuple_dis[x2 - x1] += 1
 
     if len(tuple_dis) == 0:
-        return None
+        return None, None
 
     tuple_dis_mean = list(tuple_dis)[np.argmax(list(tuple_dis.values()))]
 
     # Minimum suppport kmer for circular segments
     if tuple_dis[tuple_dis_mean] <= support_min:
-        return None
+        return None, None
 
     # Random walk distribution for alignment length
     tuple_dis_delta = int(2.3 * np.sqrt(p_indel * tuple_dis_mean))
 
-    # Kmer with maximum occurence
-    sorted_kmers = sorted(list(kmer_occ), key=lambda x: (len(kmer_occ[x]), -kmer_occ[x][0]), reverse=True)
-    occ_max = len(kmer_occ[sorted_kmers[0]])
+    # Chain of match kmers
+    intervals = [(0, len(seq)), ]
+    chains = [[], ]
 
-    # Find junctions
-    cand_junc = []
-    for kmer in sorted_kmers:
-        if len(kmer_occ[kmer]) != occ_max:
-            break
-        valid_s = valid_junc(kmer_occ[kmer], tuple_dis_mean, tuple_dis_delta)
-        if len(valid_s) == 0:
+    for i in range(len(seq) - k):
+        j, score = best_hit(seq, seq[i:i+k], i + tuple_dis_mean - tuple_dis_delta, i + tuple_dis_mean + tuple_dis_delta)
+        if score > int(0.25 * k):
             continue
-        cand_junc.append(valid_s)
 
-    if len(cand_junc) == 0:
-        return None
+        for x, (s, e) in enumerate(intervals):
+            if s <= i < e and s <= j < e:
+                intervals = intervals[:x] + [(s, j), (j, e)] + intervals[x+1:]
+                chains[x].append(i)
+                chains = chains[:x+1] + [[j],] + chains[x+1:]
+                break
+            elif s <= i <= e:
+                chains[x].append(i)
+            elif s <= j <= e:
+                chains[x].append(j)
+            else:
+                pass
 
-    final_junc = sorted(cand_junc, key=lambda x: (len(x), -x[0]), reverse=True)[0]
+    if min([len(c) for c in chains]) == 0 or len(chains) <= 1:
+        LOGGER.warn('Dropped strange repeat patterns for {}'.format(header))
+        return None, None
 
-    # Head and tail in 100 bp region
-    while final_junc[0] >= 15:
-        if tuple_dis_mean < final_junc[0]:
-            x, score = best_hit(seq, seq[final_junc[0]:final_junc[0] + k],
-                                max(0, final_junc[0] - tuple_dis_mean - tuple_dis_delta),
-                                final_junc[0] - tuple_dis_mean + tuple_dis_delta)
-            if score > 3:
-                return None
-            final_junc = [x, ] + final_junc
-        else:
-            # final_junc = [0, ] + final_junc
-            break
+    is_circular = 1
 
-    while final_junc[-1] <= len(seq) - 15:
-        if final_junc[-1] + tuple_dis_mean < len(seq):
-            x, score = best_hit(seq, seq[final_junc[-1]:final_junc[-1] + k],
-                                final_junc[-1] + tuple_dis_mean - tuple_dis_delta,
-                                min(final_junc[-1] + tuple_dis_mean + tuple_dis_delta, len(seq)))
-            if score > 3:
-                return None
-            final_junc.append(x)
-        else:
-            final_junc.append(len(seq))
+    # Over 75% similar for full length sequence
+    if len(chains) > 2 and min([max(c) - min(c) for c in chains[:-1]]) < 0.75 * tuple_dis_mean:
+        is_circular = 0
 
-    return final_junc
+    # Drop repeat patterns that have too long head / tail region
+    if chains[0][0] > 100 or chains[-1][-1] < len(seq) - 100:
+        is_circular = 0
+
+    # Extend chains to adjacent
+    chains = [[min(c), max(c)] for c in chains]
+    for i, (s, e) in enumerate(chains[:-1]):
+        if e < chains[i+1][0]:
+            chains[i] = (s, chains[i+1][0])
+    chains[-1] = (chains[-1][0], chains[-1][1] + k)
+
+    return chains, is_circular
 
 
 def valid_junc(juncs, d_mean, d_delta):
@@ -198,7 +182,9 @@ def best_hit(seq, seed, start, end):
 def worker(chunk, out_dir, debugging):
     ret = []
     for header, seq in chunk:
-        segments, ccs = find_consensus(header, seq, out_dir, debugging)
+        segments, ccs, is_circular = find_consensus(header, seq, out_dir, debugging)
+        if segments is None or ccs is None or is_circular == 0:
+            continue
         ret.append((header, seq, segments, ccs))
     return ret
 
