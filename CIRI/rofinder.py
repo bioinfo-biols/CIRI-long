@@ -186,7 +186,7 @@ def worker(chunk, out_dir, debugging):
         if segments is None or ccs is None or is_circular == 0:
             continue
         ret.append((header, seq, segments, ccs))
-    return ret
+    return len(chunk), ret
 
 
 def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
@@ -257,11 +257,9 @@ def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
     with open('{}/{}.ccs.fa'.format(out_dir, prefix), 'w') as out, \
             open('{}/{}.raw.fa'.format(out_dir, prefix), 'w') as trimmed:
         for job in jobs:
-            ret = job.get()
+            tmp_cnt, ret = job.get()
+            total_reads += tmp_cnt
             for header, seq, segments, ccs in ret:
-                total_reads += 1
-                if segments is None and ccs is None:
-                    continue
                 ro_reads += 1
                 out.write('>{}\t{}\t{}\n{}\n'.format(header, segments, len(ccs), to_str(ccs)))
                 trimmed.write('>{}\n{}\n'.format(header, seq))

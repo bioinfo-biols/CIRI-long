@@ -3,8 +3,6 @@ from CIRI import poa
 
 
 def test_poa():
-    from operator import itemgetter
-    from Levenshtein import distance
     fasta = (
         ('0-145', 'TCCCGGTCATCATAACCCCGATCGTACCCTCTGTCATAATAGTCTCGGCGGCGAGAACTGCCACTGTAAATCTGATCCCTGTCTTGAGCTGCTCTCCATCCACCTCCCTCCACCACCTCCTCCTCTGTATGATCTGCTGTAATAG'),
         ('145-289', 'TCCCGGTCATCATAACCCCGATCATTGCCACCTGTCATAGTCTCGGCGGCGAGAACTGCCACTGTAAATCCCCTGATCCCTGTCTTGAGCTGCTCTCCATCCCCTCCTCCACCACCTCCTCCTCTGTATGATCTGCTGTAATAG'),
@@ -16,9 +14,6 @@ def test_poa():
     ccs = poa.consensus(fasta, 1,
                         10, -4, -8, -2, -24, -1,
                         debug=1)
-    # ccs = poa.consensus(fasta, 1,
-    #                     2, -4, -4, -2, -24, -1,
-    #                     debug=1)
     print(ccs)
 
 

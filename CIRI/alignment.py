@@ -35,13 +35,13 @@ SPLICE_SIGNAL = {
     ('GT', 'AG'): 0, # U2-type
     ('GC', 'AG'): 1, # U2-type
     ('AT', 'AC'): 2, # U12-type
-    ('GT', 'TG'): 3, # non-canonical
-    ('AT', 'AG'): 3, # non-canonical
-    ('GA', 'AG'): 3, # non-canonical
-    ('GG', 'AG'): 3, # non-canonical
-    ('GT', 'GG'): 3, # non-canonical
-    ('GT', 'AT'): 4, # non-canonical
-    ('GT', 'AA'): 4, # non-canonical
+    # ('GT', 'TG'): 3, # non-canonical
+    # ('AT', 'AG'): 3, # non-canonical
+    # ('GA', 'AG'): 3, # non-canonical
+    # ('GG', 'AG'): 3, # non-canonical
+    # ('GT', 'GG'): 3, # non-canonical
+    # ('GT', 'AT'): 4, # non-canonical
+    # ('GT', 'AA'): 4, # non-canonical
 }
 
 
@@ -209,6 +209,11 @@ def search_splice_signal(contig, start, end, q_head, q_tail, search_length=10, s
     ds_search_length = search_length + ds_free
     us_seq = ALIGNER.seq(contig, start - us_search_length - 2, start + ds_search_length)
     ds_seq = ALIGNER.seq(contig, end - us_search_length, end + ds_search_length + 2)
+
+    if us_seq is None or len(us_seq) < ds_search_length - us_search_length + 2:
+        return None, us_free, ds_free
+    if ds_seq is None or len(ds_seq) < ds_search_length - us_search_length + 2:
+        return None, us_free, ds_free
 
     putative_ss = []
     for strand in ['+', '-']:
