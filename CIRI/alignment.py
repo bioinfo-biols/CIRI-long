@@ -465,6 +465,8 @@ def parse_chunk(chunk, is_canonical):
         circ_ctg = tmp_hit.ctg
         circ_start = tmp_hit.r_st + us_shift
         circ_end = tmp_hit.r_en + ds_shift
+
+        tmp_strand = '+' if tmp_hit.strand == '1' else '-'
         circ_id = '{}:{}-{}'.format(circ_ctg, circ_start + 1, circ_end)
 
         # if read_id.split('|')[2] != circ_id:
