@@ -60,7 +60,7 @@ setup(
         'scikit-learn==0.21.3', 'scipy==1.3.1',
     ],
     test_suite="nose.collector",
-    tests_require=['nose'],
+    tests_require=['nose==1.3.7'],
     classifiers=[
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python',

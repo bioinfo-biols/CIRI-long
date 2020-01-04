@@ -19,6 +19,7 @@ help:
 lib:
 	mkdir -p vendor/spoa/build
 	cd vendor/spoa/build && cmake -DCMAKE_BUILD_TYPE=Release .. && make
+	cd vendor/bwapy && make bwa/libbwa.a && python setup.py install
 
 prepare:
 	cat requirements.txt | xargs -n 1 pip3 install
