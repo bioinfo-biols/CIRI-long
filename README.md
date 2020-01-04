@@ -12,6 +12,7 @@ Circular RNA Identification for Nanopore Sequencing
 - CIRI-long requires pysam lib, which need executable binary and header of zlib, bzip2, xz, 
 please refer to documentation of [pysam](https://pysam.readthedocs.io/en/latest/installation.html) for installation instructions
 - all python dependencies are listed in `requirements.txt`
+- `samtools` version 1.9 or higher
 
 
 #### Installation

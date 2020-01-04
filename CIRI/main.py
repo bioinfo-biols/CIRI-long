@@ -3,12 +3,13 @@ import os
 import sys
 import pickle
 import argparse
+from collections import defaultdict
 
 
 def main():
     from CIRI.version import __version__
     from CIRI.rofinder import find_ccs_reads, load_ccs_reads
-    from CIRI.alignment import filter_ccs_reads, index_annotation
+    from CIRI.alignment import index_annotation, scan_ccs_reads, recover_ccs_reads
     from CIRI.utils import check_file, check_dir
     from CIRI.logger import get_logger
 
@@ -17,8 +18,8 @@ def main():
                         help='Input reads.fq.gz', )
     parser.add_argument('-o', '--out', dest='output', metavar='DIR', default=None,
                         help='Output directory, default: ./', )
-    parser.add_argument('-x', '--mmi', dest='mmi', metavar='MMI', default=None,
-                        help='Minimap2 index of reference genome', )
+    parser.add_argument('-r', '--ref', dest='reference', metavar='REF', default=None,
+                        help='Reference genome FASTA file', )
     parser.add_argument('-p', '--prefix', dest='prefix', metavar='PREFIX', default="CIRI-long",
                         help='Output sample prefix, default: CIRI-long', )
     parser.add_argument('-a', '--anno', dest='gtf', metavar='GTF', default=None,
@@ -35,14 +36,14 @@ def main():
 
     if args.input is None or args.output is None:
         sys.exit('Please provide input and output file, run CIRI-long using -h or --help for detailed information.')
-    if args.mmi is None:
-        sys.exit('Please specific minimap2 index or reference fasta')
+    if args.reference is None:
+        sys.exit('Please specific FASTA of reference genome')
 
     # Check parameters
     in_file = check_file(args.input)
     gtf_file = None if args.gtf is None else check_file(args.gtf)
     out_dir = check_dir(args.output)
-    minimap_index = check_file(args.mmi)
+    ref_fasta = check_file(args.reference)
     check_dir(out_dir + '/tmp')
     prefix = args.prefix
     threads = int(args.threads)
@@ -55,19 +56,20 @@ def main():
     logger.info('Multi threads: {}'.format(args.threads))
 
     # Scan for repeats and CCS
-    if os.path.exists('{}/{}.ccs.fa'.format(out_dir, prefix)) and os.path.exists('{}/{}.raw.fa'.format(out_dir, prefix)):
+    reads_count = defaultdict(int)
+    if os.path.exists('{}/tmp/{}.ccs.fa'.format(out_dir, prefix)) and os.path.exists('{}/tmp/{}.raw.fa'.format(out_dir, prefix)):
         logger.info('Step 1 - Loading circRNA candidates in previous run')
         ccs_seq = load_ccs_reads(out_dir, prefix)
-        reads_count = {
-            'with_repeats': len(ccs_seq)
-        }
+        reads_count['consensus'] = len(ccs_seq)
     else:
         logger.info('Step 1 - Scanning raw reads to find circRNA candidates')
         total_reads, ro_reads, ccs_seq = find_ccs_reads(in_file, out_dir, prefix, threads, debugging)
-        reads_count = {
-            'Total': total_reads,
-            'with_repeats': ro_reads,
-        }
+        reads_count['total'] = total_reads
+        reads_count['consensus'] = ro_reads
+
+    if 'total' in reads_count:
+        logger.info('Total Reads: {}'.format(reads_count['total']))
+    logger.info('Cyclic Consensus Reads: {}'.format(reads_count['consensus']))
 
     # generate index of splice site and annotation
     if gtf_file is None:
@@ -85,21 +87,24 @@ def main():
                 pickle.dump([gtf_idx, ss_idx], idx)
 
     # Find circRNAs
-    logger.info('Step 2 - Candidate reads alignment & filter')
-    tmp_cnt = filter_ccs_reads(ccs_seq, minimap_index, ss_idx, is_canonical, out_dir, prefix, threads, debugging)
-    reads_count.update(tmp_cnt)
+    logger.info('Step 2 - First scanning')
+    tmp_cnt, short_seq = scan_ccs_reads(ccs_seq, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
+    for key, value in tmp_cnt.items():
+        reads_count[key] += value
 
-    logger.info('All Finished!')
-    logger.info('Summary:')
-    if 'Total' in reads_count:
-        logger.info('Total Reads: {}'.format(reads_count['Total']))
-    logger.info('Cyclic Tandem Repeats: {}'.format(reads_count['with_repeats']))
-    logger.info('Consensus: {}'.format(reads_count['consensus']))
+    # Recover short reads
+    logger.info('Step 3 - Second scanning')
+    tmp_cnt = recover_ccs_reads(short_seq, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
+    for key, value in tmp_cnt.items():
+        reads_count[key] += value
+
     logger.info('Raw unmapped: {}'.format(reads_count['raw_unmapped']))
     logger.info('CCS mapped: {}'.format(reads_count['ccs_mapped']))
-    logger.info('CCS & Raw aligned concordantly: {}'.format(reads_count['accordance']))
+    # logger.info('CCS & Raw aligned concordantly: {}'.format(reads_count['accordance']))
     logger.info('BSJ: {}'.format(reads_count['bsj']))
-    logger.info('Splice signal: {}'.format(reads_count['splice_signal']))
+    logger.info('Splice signal: {}'.format(reads_count['signal']))
+
+    logger.info('All Finished!')
 
 
 if __name__ == '__main__':

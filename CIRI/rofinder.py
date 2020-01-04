@@ -5,11 +5,244 @@ from collections import namedtuple, defaultdict
 LOGGER = logging.getLogger('CIRI-long')
 
 import numpy as np
-from skbio import DNA, local_pairwise_align_ssw
 
 
-def find_consensus(header, seq, out_dir, debugging):
-    from .preprocess import trim_primer
+def collect_kmers(seq, k=8, use_hpc=False):
+    """
+    split sequence into kmers
+    :param seq: sequence
+    :param k: k-mer size
+    :param use_hpc: True if use homopolymer-compressed kmers
+    :return: dict of kmers and occurence position
+    """
+    kmers = {}
+    kmer_occ = defaultdict(list)
+
+    split_func = split_hpc_kmers if use_hpc else split_kmers
+    for i, kmer in split_func(seq, k):
+        kmers[i] = kmer
+        kmer_occ[kmer].append(i)
+
+    return kmers, kmer_occ
+
+
+def split_kmers(seq, k=8):
+    for x in range(len(seq)):
+        if x >= k - 1:
+            yield x, seq[x-k+1:x+1]
+
+
+def split_hpc_kmers(seq, k=8):
+    hpc = [seq[0], ]
+    for x, (i, j) in enumerate(zip(seq[:-1], seq[1:])):
+        if i != j:
+            hpc.append(j)
+        if len(hpc) >= k:
+            yield x + 1, ''.join(hpc[-k:])
+
+
+def estimate_distance(kmer_occ, p_indel, d_min):
+    from scipy.stats.kde import gaussian_kde
+    tuple_dis = []
+    for k_occ in kmer_occ.values():
+        for x1, x2 in zip(k_occ[:-1], k_occ[1:]):
+            if x2 - x1 < d_min:
+                continue
+            tuple_dis.append(x2 - x1)
+    if len(tuple_dis) <= 2:
+        return None, None, 0
+
+    dis_uniq = np.unique(tuple_dis)
+    if len(dis_uniq) == 1:
+        tuple_dis_mean = dis_uniq[0]
+    else:
+        # Kernel density estimation
+        kernel = gaussian_kde(tuple_dis)
+        tuple_dis_mean = dis_uniq[np.argmax(kernel(dis_uniq))]
+
+    # Random walk model
+    tuple_dis_delta = int(2.3 * np.sqrt(p_indel * tuple_dis_mean))
+    tuple_dis_support = len([i for i in tuple_dis if abs(i - tuple_dis_mean) <= tuple_dis_delta])
+
+    return tuple_dis_mean, tuple_dis_delta, tuple_dis_support
+
+
+def optimal_hit(kmers, seed, s, e, use_hpc):
+    """
+    Return hit with smallest distance and nearest to optimal distance
+    """
+    from Levenshtein import distance
+    from operator import itemgetter
+
+    hits = []
+    for i in range(s, e + 1):
+        if i not in kmers:
+            continue
+        hits.append([i, kmers[i], distance(seed, kmers[i]), max(i - s, i - e)])
+
+    # No hit
+    if len(hits) == 0:
+        return None, None, len(seed), None
+
+    # For HPC hits
+    if use_hpc and len(hits) > 1:
+        hits = collapse_hits(hits)
+
+    return sorted(hits, key=itemgetter(2, 3))[0]
+
+
+def collapse_hits(hits):
+    """
+    For hits with same HPC k-mer content and distance, collapse into the last base
+    """
+    collapsed = []
+    for i, j in zip(hits[:-1], hits[1:]):
+        if j[0] == i[0] + 1 and j[1] == i[0]:
+            continue
+        else:
+            collapsed.append(j)
+    return collapsed
+
+
+def circular_hits(kmers, k, tuple_dis_mean, tuple_dis_delta, p_match, use_hpc):
+    pos = sorted(list(kmers))
+    hits = {}
+    for i in pos:
+        j, _, score, _ = optimal_hit(kmers, kmers[i],
+                                  i + tuple_dis_mean - tuple_dis_delta,
+                                  i + tuple_dis_mean + tuple_dis_delta,
+                                  use_hpc)
+        if score > int(k * (1 - p_match)):
+            continue
+        hits[i] = (i, j, j - i, score)
+    return hits
+
+
+def optimal_chains(hits):
+    """
+    Intersect hits into chains
+    """
+    pos = sorted(list(hits))
+    s0, e0, _, score0 = hits[pos[0]]
+
+    chains = [[(s0, e0, score0), ], ]
+    for i in pos[1:]:
+        s, e, _, score = hits[i]
+        if chains[-1][-1][0] < s < chains[-1][-1][1] <= e:
+            chains[-1].append((s, e, score))
+        elif chains[-1][-1][1] < s:
+            chains.append([(s, e, score), ])
+        else:
+            pass
+
+    # Sort chains by length
+    chains = sorted(chains, key=lambda x: x[-1][1] - x[0][0], reverse=True)
+
+    return chains[0]
+
+
+def gap_function(x, y):
+    """
+    Second affine gap function
+    """
+    if y == 0: # No gap
+        return 0
+    elif y == 1:
+        return -8
+    else:
+        return - min(8 + y * 2, 24 + y)
+
+
+def split_sequence(primary_chain, seq, p_match, p_indel):
+    from Bio import pairwise2
+
+    match = 10
+    mismatch = -4
+    gap = -8
+    extension = -2
+
+    final = primary_chain[-1][1]
+
+    for s, e, score in primary_chain:
+        if score == 0:
+            break
+    boundaries = [s, e, ]
+
+    idx = 0
+
+    hits = {hit[0]: hit for hit in primary_chain}
+    hit_pos =  [hit[0] for hit in primary_chain]
+
+    last_x = e
+    while last_x < final:
+        if last_x in hits:
+            idx = hit_pos.index(last_x)
+            last_x = hits[last_x][1]
+            boundaries.append(last_x)
+        else:
+            # Find nearest hits
+            while hit_pos[idx] < last_x:
+                if idx >= len(hit_pos) - 1 or hit_pos[idx + 1] >= last_x:
+                    break
+                idx += 1
+            if idx >= len(hit_pos) - 1:
+                break
+
+            # local alignment
+            q_s, r_s, _ = hits[hit_pos[idx]]
+            q_e, r_e, _ = hits[hit_pos[idx + 1]]
+
+            alignments = pairwise2.align.globalms(seq[q_s:q_e + 1], seq[r_s:r_e + 1],
+                                                  match, mismatch, gap, extension)
+
+            q_shift, r_shift = 0, 0
+            q_seq, r_seq, score, _, _ = alignments[0]
+            for i, j in zip(q_seq, r_seq):
+                q_shift += int(i in 'atcgATCG')
+                r_shift += int(j in 'atcgATCG')
+                if q_shift == last_x - q_s:
+                    break
+            # TODO: Stop searching when the score is too slow
+            last_x = r_s + r_shift
+            boundaries.append(last_x)
+
+    segments = [(i, j) for i, j in zip(boundaries[:-1], boundaries[1:])]
+    if segments[-1][-1] < final:
+        segments.append((segments[-1][-1], final))
+
+    return segments
+
+
+def circular_finder(read_id, seq, k=8, use_hpc=True, p_match=.85, p_indel=.1, d_min=40, support_min=2):
+    assert 0 <= p_indel <= 1
+    assert 0 <= p_match <= 1
+
+    # Split k-mers
+    kmers, kmer_occ = collect_kmers(seq, k, use_hpc)
+
+    # Approximately distance of circular segments
+    tuple_dis_mean, tuple_dis_delta, tuple_dis_support = estimate_distance(kmer_occ, p_indel, d_min)
+    if tuple_dis_support < support_min:
+        return None, None
+
+    # Hits of kmers
+    tuple_hits = circular_hits(kmers, k, tuple_dis_mean, tuple_dis_delta, p_match, use_hpc)
+
+    # Primary chain
+    primary_chain = optimal_chains(tuple_hits)
+
+    # Split into segments
+    segments = split_sequence(primary_chain, seq, p_match, p_indel)
+
+    is_circular = 1
+    # Head and tail position
+    if segments[0][0] > 100 or segments[-1][-1] < len(seq) - 100:
+        is_circular = 0
+
+    return segments, is_circular
+
+
+def find_consensus(header, seq):
     from poa import consensus
 
     # Trim sequence
@@ -19,8 +252,8 @@ def find_consensus(header, seq, out_dir, debugging):
     # Repeat segments
     chains = None
     is_circular = 0
-    for k in [11, 9, 7]:
-        tmp_chain, tmp_circular = ROF(header, seq, k=k)
+    for k, is_hpc in [(11, False), (8, False), (11, True), (8, True)]:
+        tmp_chain, tmp_circular = circular_finder(header, seq, k=k, use_hpc=is_hpc)
         if tmp_chain is None:
             continue
         if tmp_circular == 1:
@@ -34,155 +267,28 @@ def find_consensus(header, seq, out_dir, debugging):
     if chains is None:
         return None, None, None
 
+    # Chains
+    if len(chains) < 2:
+        return None, None, None
+
     fasta = [('{}-{}'.format(s, e), seq[s:e]) for s, e in chains]
     ccs = consensus(fasta, alignment_type=1,
                     match=10, mismatch=-4, gap=-8, extension=-2, gap_affine=-24, extension_affine=-4,
                     debug=0)
-    # if header == 'ENSMUST00000177117|ENSMUSG00000021546|13:58395270-58396899|-|211_544_aligned_43648_R_28_1692_15':
-    #     print(header)
 
     segments = ';'.join(['{}-{}'.format(s, e) for s, e in chains])
 
     return segments, ccs, is_circular
 
 
-def ROF(header, seq, k=11, p_match=0.8, p_indel=0.1, d_min=40, support_min=2):
-    """
-    Circular Finder
-
-    Paramters
-    ---------
-    seq : str
-        input sequence
-    k : int, default 11
-        k-mer length
-    p_match : float, default 0.8
-        probability of match in kmer
-    p_indel : float, default 0.1
-        probability of indel in kmer
-    d_min : int, default 40
-        minimum distance of repeat kmer
-    support_min : int, default 19
-        minimum support kmer of distance
-
-    Returns
-    -------
-    junc : tuple
-        position of junction site
-
-    """
-
-    assert 0 <= p_indel <= 1
-    assert 0 <= p_match <= 1
-
-    # Occurence of kmer
-    kmer_occ = defaultdict(list)
-    for i in range(len(seq) - k):
-        kmer = seq[i:i + k]
-        kmer_occ[kmer].append(i)
-
-    # Distance of repeat kmers
-    tuple_dis = defaultdict(int)
-    for k_occ in kmer_occ.values():
-        for x1, x2 in zip(k_occ[:-1], k_occ[1:]):
-            # filter out repeat near than d_min
-            if x2 - x1 >= d_min:
-                tuple_dis[x2 - x1] += 1
-
-    if len(tuple_dis) == 0:
-        return None, None
-
-    tuple_dis_mean = list(tuple_dis)[np.argmax(list(tuple_dis.values()))]
-
-    # Minimum suppport kmer for circular segments
-    if tuple_dis[tuple_dis_mean] <= support_min:
-        return None, None
-
-    # Random walk distribution for alignment length
-    tuple_dis_delta = int(2.3 * np.sqrt(p_indel * tuple_dis_mean))
-
-    # Chain of match kmers
-    intervals = [(0, len(seq)), ]
-    chains = [[], ]
-
-    for i in range(len(seq) - k):
-        j, score = best_hit(seq, seq[i:i+k], i + tuple_dis_mean - tuple_dis_delta, i + tuple_dis_mean + tuple_dis_delta)
-        if score > int(0.25 * k):
-            continue
-
-        for x, (s, e) in enumerate(intervals):
-            if s <= i < e and s <= j < e:
-                intervals = intervals[:x] + [(s, j), (j, e)] + intervals[x+1:]
-                chains[x].append(i)
-                chains = chains[:x+1] + [[j],] + chains[x+1:]
-                break
-            elif s <= i <= e:
-                chains[x].append(i)
-            elif s <= j <= e:
-                chains[x].append(j)
-            else:
-                pass
-
-    if min([len(c) for c in chains]) == 0 or len(chains) <= 1:
-        LOGGER.warn('Dropped strange repeat patterns for {}'.format(header))
-        return None, None
-
-    is_circular = 1
-
-    # Over 75% similar for full length sequence
-    if len(chains) > 2 and min([max(c) - min(c) for c in chains[:-1]]) < 0.75 * tuple_dis_mean:
-        is_circular = 0
-
-    # Drop repeat patterns that have too long head / tail region
-    if chains[0][0] > 100 or chains[-1][-1] < len(seq) - 100:
-        is_circular = 0
-
-    # Extend chains to adjacent
-    chains = [[min(c), max(c)] for c in chains]
-    for i, (s, e) in enumerate(chains[:-1]):
-        if e < chains[i+1][0]:
-            chains[i] = (s, chains[i+1][0])
-    chains[-1] = (chains[-1][0], chains[-1][1] + k)
-
-    return chains, is_circular
-
-
-def valid_junc(juncs, d_mean, d_delta):
-    valid_s = []
-    last_s = None
-    for s in juncs:
-        if last_s is not None and s != last_s:
-            continue
-
-        for x in range(s + d_mean - d_delta, s + d_mean + d_delta):
-            if x in juncs:
-                valid_s.append(s)
-                last_s = x
-                break
-
-    if last_s is not None:
-        valid_s.append(last_s)
-
-    return valid_s
-
-
-def best_hit(seq, seed, start, end):
-    from Levenshtein import distance
-    k = len(seed)
-    pos = []
-    dis = []
-    for i in range(start, end):
-        pos.append(i)
-        dis.append(distance(seq[i:i + k], seed))
-
-    min_x = np.argmin(dis)
-    return pos[min_x], dis[min_x]
-
-
-def worker(chunk, out_dir, debugging):
+def worker(chunk):
     ret = []
+    # is_aval = 0
+    # is_found = 0
     for header, seq in chunk:
-        segments, ccs, is_circular = find_consensus(header, seq, out_dir, debugging)
+        # if header not in ['ENSMUST00000193941|ENSMUSG00000102543|18:37825021-37825079|+|59_6_aligned_43846_F_18_510_30', ]:
+        #     continue
+        segments, ccs, is_circular = find_consensus(header, seq)
         if segments is None or ccs is None or is_circular == 0:
             continue
         ret.append((header, seq, segments, ccs))
@@ -235,13 +341,13 @@ def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
         # Split into chunks
         chunk.append((header, seq))
         if len(chunk) == chunk_size:
-            jobs.append(pool.apply_async(worker, (chunk, out_dir, debugging, )))
+            jobs.append(pool.apply_async(worker, (chunk, )))
             # worker(chunk, out_dir, debugging)
             chunk = []
             chunk_cnt += 1
 
     if len(chunk) > 0:
-        jobs.append(pool.apply_async(worker, (chunk, out_dir, debugging, )))
+        jobs.append(pool.apply_async(worker, (chunk, )))
         chunk_cnt += 1
         # worker(chunk, out_dir, debugging)
     pool.close()
@@ -254,8 +360,8 @@ def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
     ro_reads = 0
 
     ccs_seq = {}
-    with open('{}/{}.ccs.fa'.format(out_dir, prefix), 'w') as out, \
-            open('{}/{}.raw.fa'.format(out_dir, prefix), 'w') as trimmed:
+    with open('{}/tmp/{}.ccs.fa'.format(out_dir, prefix), 'w') as out, \
+            open('{}/tmp/{}.raw.fa'.format(out_dir, prefix), 'w') as trimmed:
         for job in jobs:
             tmp_cnt, ret = job.get()
             total_reads += tmp_cnt
@@ -275,14 +381,14 @@ def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
 
 def load_ccs_reads(out_dir, prefix):
     ccs_seq = {}
-    with open('{}/{}.ccs.fa'.format(out_dir, prefix), 'r') as f:
+    with open('{}/tmp/{}.ccs.fa'.format(out_dir, prefix), 'r') as f:
         for line in f:
             header = line.rstrip()
             content = header.split('\t')
             seq = f.readline().rstrip()
             ccs_seq[content[0].lstrip('>')] = [content[1], seq]
 
-    with open('{}/{}.raw.fa'.format(out_dir, prefix), 'r') as f:
+    with open('{}/tmp/{}.raw.fa'.format(out_dir, prefix), 'r') as f:
         for line in f:
             header = line.rstrip().split('\t')[0].lstrip('>')
             seq = f.readline().rstrip()

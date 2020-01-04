@@ -1,18 +1,20 @@
+import os
+import sys
 import re
 import logging
+import subprocess
 from collections import defaultdict
 
+import pysam
 import numpy as np
-import mappy as mp
 
-from CIRI import poagraph
-from CIRI import seqgraphalignment
 from CIRI.logger import ProgressBar
+from CIRI.preprocess import revcomp
 
 LOGGER = logging.getLogger('CIRI-long')
-ALIGNER = None
-SS_INDEX = None
 
+
+# Parsing GTF format
 GENE_ID = re.compile(r'gene_id "(\S+)";')
 GENE_BIOTYPE = re.compile(r'gene_biotype "(\S+)";')
 GENE_TYPE = re.compile(r'gene_type "(\S+)";')
@@ -29,19 +31,6 @@ ATTR = {
     # 'transcript_id': TSCP_ID,
     # 'transcript_name': TSCP_NAME,
     # 'transcript_biotype': TSCP_BIOTYPE,
-}
-
-SPLICE_SIGNAL = {
-    ('GT', 'AG'): 0, # U2-type
-    ('GC', 'AG'): 1, # U2-type
-    ('AT', 'AC'): 2, # U12-type
-    # ('GT', 'TG'): 3, # non-canonical
-    # ('AT', 'AG'): 3, # non-canonical
-    # ('GA', 'AG'): 3, # non-canonical
-    # ('GG', 'AG'): 3, # non-canonical
-    # ('GT', 'GG'): 3, # non-canonical
-    # ('GT', 'AT'): 4, # non-canonical
-    # ('GT', 'AA'): 4, # non-canonical
 }
 
 
@@ -64,6 +53,106 @@ class GTFParser(object):
             return ATTR[key].search(self.attr_string).group(1)
         except AttributeError:
             return None
+
+
+class Aligner(object):
+    """
+    API for unify bwapy to mappy::Aligner
+    """
+    def __init__(self, aligner):
+        self.aligner = aligner
+
+    def map(self, seq):
+        alignments = self.aligner.align_seq(seq)
+        if alignments:
+            hits = [Hit(aln) for aln in alignments]
+            hits[0].is_primary = 1
+            return hits
+        else:
+            return None
+
+
+OPERATION = {
+    'M': 0,
+    'I': 1,
+    'D': 2,
+    'N': 3,
+    'S': 4,
+    'H': 5,
+    'P': 6,
+    '=': 7,
+    'X': 8,
+}
+
+
+class Hit(object):
+    """
+    API for bwapy alignment
+    Alignment(rname='chr7', orient='-', pos=131329219, mapq=60, cigar='51S37M', NM=0)
+    """
+
+    def __init__(self, aln):
+        self.ctg = aln.rname
+        self.strand = 1 if aln.orient == '+' else -1
+        self.cigar_string = aln.cigar
+        self.r_st = aln.pos
+        self.r_en, self.q_st, self.q_en = self.__parse_cigar()
+        self.mlen = self.q_en - self.q_st
+        self.is_primary = 0
+
+    @property
+    def cigar(self):
+        return [(int(length), OPERATION[operation]) for length, operation in
+                re.findall(r'(\d+)([MIDNSHP=X])', self.cigar_string)]
+
+    def __parse_cigar(self):
+        r_en = self.r_st
+        q_st, q_en = 0, 0
+        for length, operation in self.cigar:
+            if operation == 0:
+                q_en += length
+                r_en += length
+            elif operation == 1:
+                q_en += length
+            elif operation in [2, 3]:
+                r_en += length
+            elif operation in [4, 5]:
+                if q_st == 0:
+                    q_st = length
+                    q_en = length
+            else:
+                pass
+        return r_en, q_st, q_en
+
+    def __str__(self):
+        return '{}\t{}\t{}\t{}\t{}\t{}'.format(self.ctg, self.r_st, self.r_en, self.q_st, self.q_en, self.cigar_string)
+
+
+class Faidx(object):
+    """
+    API for unify pysam::Fastafile and mappy2::Aligner
+    """
+    def __init__(self, infile):
+        if not os.path.exists(infile + '.fai'):
+            LOGGER.warn('Index of reference genome not found, generating ...')
+        try:
+            faidx = pysam.FastaFile(infile)
+        except ValueError:
+            LOGGER.error('Cannot generate index of reference genome, index file is missing')
+            sys.exit()
+        except IOError:
+            LOGGER.error('Cannot generate index of reference genome, file could not be opened')
+            sys.exit()
+
+        self.faidx = faidx
+        self.contig_len = {contig: faidx.get_reference_length(contig) for contig in faidx.references}
+
+
+    def seq(self, contig, start, end):
+        return self.faidx.fetch(contig, start, end)
+
+    def close(self):
+        self.faidx.close()
 
 
 def index_annotation(gtf):
@@ -103,28 +192,6 @@ def index_annotation(gtf):
     return gtf_index, splice_site_index
 
 
-def msa(fasta, verbose=0):
-    match = 1
-    gap = -2
-    mismatch = -1
-    globalAlign = 0
-    simple = 0
-
-    graph = poagraph.POAGraph(fasta[0][1], fasta[0][0])
-    for label, sequence in fasta[1:]:
-        alignment = seqgraphalignment.SeqGraphAlignment(sequence, graph, fastMethod=not simple,
-                                                        globalAlign=globalAlign,
-                                                        matchscore=match, mismatchscore=mismatch,
-                                                        gapscore=gap)
-        graph.incorporateSeqAlignment(alignment, sequence, label)
-    if verbose:
-        alignments = graph.generateAlignmentStrings()
-        for label, alignstring in alignments:
-            print("{0:15s} {1:s}".format(label, alignstring))
-        print()
-    return [''.join(i[1]) for i in graph.allConsenses()]
-
-
 def get_blocks(hit):
     r_start = hit.r_st
     r_end = hit.r_st
@@ -144,23 +211,54 @@ def get_blocks(hit):
             pass
     if r_end > r_start:
         r_block.append([r_start, r_end, r_end - r_start + 1])
-    # return ','.join(['{}-{}|{}'.format(i[0], i[1], i[2]) for i in r_block])
     return r_block
 
 
-def search_splice_signal(contig, start, end, q_head, q_tail, search_length=10, shift_threshold=3):
-    # Zero: Find free sliding region
+def merge_exons(exons, clip_info):
+    clip_st, clip_en, clip_base = clip_info
+    exon_st, exon_en = exons[0][0], exons[-1][1]
+
+    if clip_st and clip_en:
+        if clip_en < exon_st:
+            exons = [[clip_st, clip_en, clip_base], ] + exons
+        elif exon_en < clip_st:
+            exons = exons + [[clip_st, clip_en, clip_base], ]
+        elif clip_st < exon_st < clip_en:
+            exons[0] = [clip_st, exons[0][1], exons[0][1] - clip_st + 1]
+        elif clip_st < exon_en < clip_en:
+            exons[-1] = [exons[-1][0], clip_en, clip_en - exons[-1][0] + 1]
+        else:
+            pass
+
+    return exons
+
+SPLICE_SIGNAL = {
+    ('GT', 'AG'): 0, # U2-type
+    ('GC', 'AG'): 1, # U2-type
+    ('AT', 'AC'): 2, # U12-type
+    # ('GT', 'TG'): 3, # non-canonical
+    # ('AT', 'AG'): 3, # non-canonical
+    # ('GA', 'AG'): 3, # non-canonical
+    # ('GG', 'AG'): 3, # non-canonical
+    # ('GT', 'GG'): 3, # non-canonical
+    # ('GT', 'AT'): 4, # non-canonical
+    # ('GT', 'AA'): 4, # non-canonical
+}
+
+
+def search_splice_signal(contig, start, end, clip_base, search_length=10, shift_threshold=3):
+    # Find free sliding region
     # start | real_start <-> end | real_end
     ds_free = 0
     for i in range(100):
-        if ALIGNER.seq(contig, start, start + i) == ALIGNER.seq(contig, end, end + i):
+        if FAIDX.seq(contig, start, start + i) == FAIDX.seq(contig, end, end + i):
             ds_free = i
         else:
             break
 
     us_free = 0
     for j in range(100):
-        if ALIGNER.seq(contig, start - j, start) == ALIGNER.seq(contig, end - j, end):
+        if FAIDX.seq(contig, start - j, start) == FAIDX.seq(contig, end - j, end):
             us_free = j
         else:
             break
@@ -189,10 +287,10 @@ def search_splice_signal(contig, start, end, q_head, q_tail, search_length=10, s
                 for j in tmp_ds_sites:
                     if abs(i - j) > shift_threshold:
                         continue
-                    us_ss = ALIGNER.seq(contig, start + i - 2, start + i)
-                    ds_ss = ALIGNER.seq(contig, end + j, end + j + 2)
+                    us_ss = FAIDX.seq(contig, start + i - 2, start + i)
+                    ds_ss = FAIDX.seq(contig, end + j, end + j + 2)
                     if strand == '-':
-                        us_ss, ds_ss = mp.revcomp(ds_ss), mp.revcomp(us_ss)
+                        us_ss, ds_ss = revcomp(ds_ss), revcomp(us_ss)
                     ss_id = '{}-{}|{}-{}'.format(us_ss, ds_ss, i, j)
                     ss_weight = SPLICE_SIGNAL[(ds_ss, us_ss)] if (ds_ss, us_ss) in SPLICE_SIGNAL else 3
                     anno_ss.append((
@@ -202,13 +300,13 @@ def search_splice_signal(contig, start, end, q_head, q_tail, search_length=10, s
                     ))
 
         if len(anno_ss) > 0:
-            return sort_splice_sites(anno_ss, us_free, ds_free, q_head, q_tail), us_free, ds_free
+            return sort_splice_sites(anno_ss, us_free, ds_free, clip_base), us_free, ds_free
 
     # Second: Find Denovo BSJ using pre-defined splice signal
     us_search_length = search_length + us_free
     ds_search_length = search_length + ds_free
-    us_seq = ALIGNER.seq(contig, start - us_search_length - 2, start + ds_search_length)
-    ds_seq = ALIGNER.seq(contig, end - us_search_length, end + ds_search_length + 2)
+    us_seq = FAIDX.seq(contig, start - us_search_length - 2, start + ds_search_length)
+    ds_seq = FAIDX.seq(contig, end - us_search_length, end + ds_search_length + 2)
 
     if us_seq is None or len(us_seq) < ds_search_length - us_search_length + 2:
         return None, us_free, ds_free
@@ -220,7 +318,7 @@ def search_splice_signal(contig, start, end, q_head, q_tail, search_length=10, s
         for (ds_ss, us_ss), ss_weight in SPLICE_SIGNAL.items():
             ss_id = '{}-{}*'.format(us_ss, ds_ss)
             if strand == '-':
-                ds_ss, us_ss = mp.revcomp(us_ss), mp.revcomp(ds_ss)
+                ds_ss, us_ss = revcomp(us_ss), revcomp(ds_ss)
 
             # Find upstream signal
             tmp_us_start = 0
@@ -260,12 +358,12 @@ def search_splice_signal(contig, start, end, q_head, q_tail, search_length=10, s
                     ))
 
     if len(putative_ss) > 0:
-        return sort_splice_sites(putative_ss, us_free, ds_free, q_head, q_tail), us_free, ds_free
+        return sort_splice_sites(putative_ss, us_free, ds_free, clip_base), us_free, ds_free
 
     return None, us_free, ds_free
 
 
-def sort_splice_sites(sites, us, ds, q_head, q_tail):
+def sort_splice_sites(sites, us, ds, clip_base):
     # Splice site: site_id, strand, us_shift, ds_shift, site_weight, altered_len, altered_total
     from operator import itemgetter
     get_ss = itemgetter(0, 1, 2, 3)
@@ -276,8 +374,7 @@ def sort_splice_sites(sites, us, ds, q_head, q_tail):
         return get_ss(sorted(confident_sites, key=itemgetter(5, 4, 6))[0])
 
     # Ambiguous splice sites
-    ambiguous_base = q_head + q_tail
-    ambiguous_sites = [i for i in set(sites) - set(confident_sites) if -ambiguous_base <= i[2] <= 0 <= i[3] <= ambiguous_base]
+    ambiguous_sites = [i for i in set(sites) - set(confident_sites) if -clip_base <= i[2] <= 0 <= i[3] <= clip_base]
     if len(ambiguous_sites) > 0:
         return get_ss(sorted(ambiguous_sites, key=itemgetter(4, 5, 6))[0])
 
@@ -288,271 +385,378 @@ def sort_splice_sites(sites, us, ds, q_head, q_tail):
     return None
 
 
-def initializer(aligner, splice_site_index):
-    global ALIGNER, SPLICE_SIGNAL, SS_INDEX
-    ALIGNER = aligner
-    SS_INDEX = splice_site_index
+def get_primary_alignment(hits):
+    if hits is None:
+        return None
+
+    for hit in hits:
+        if hit.is_primary:
+            return hit
+
+    return None
 
 
-def parse_chunk(chunk, is_canonical):
-    from CIRI.preprocess import revcomp
+def find_bsj(ccs):
+    """
+    Find junction using aligner
+    """
+    init_hit = get_primary_alignment(ALIGNER.map(ccs * 2))
+    if init_hit is None:
+        return None
 
-    consensus_cnt = 0
-    raw_unmapped_cnt = 0
-    ccs_mapped_cnt = 0
-    accordance_cnt = 0
-    bsj_cnt = 0
-    signal_cnt = 0
+    circ_junc = init_hit.q_st
+    circ = ccs[circ_junc:] + ccs[:circ_junc]
 
-    ret = []
-    for read_id, segments, ccs, raw in chunk:
-        # if read_id not in ['ENSMUST00000112106|ENSMUSG00000042323|14:31025498-31027530|+|236_163_aligned_43562_R_42_325_16',]:
-        #     continue
+    last_junc = 0
+    last_m = 0
 
-        # Filter 1 - Remove ccs with strange consensus length
-        fasta = []
-        for pos in segments.split(';'):
-            i_st, i_en = pos.split('-')
-            fasta.append(('{}-{}'.format(i_st, i_en), raw[int(i_st):int(i_en)]))
+    last_junc = 0
+    last_m = 0
 
-        if len(fasta) < 2:
-            continue
+    itered_junc = {}
+    while True:
+        circ_hit = get_primary_alignment(ALIGNER.map(circ))
+        if circ_hit is None or circ_hit.mlen < last_m:
+            circ_junc = last_junc
+            break
+        last_m = circ_hit.mlen
+        last_junc = circ_junc
 
-        d_mean = np.mean([len(i) for _, i in fasta[:-1]])
-        d_delta = int(2.3 * np.sqrt(0.1 * d_mean))
-        if 0.9 * (d_mean - d_delta) > len(ccs) or 1.1 * (d_mean + d_delta) < len(ccs):
-            continue
+        st_clip, en_clip = circ_hit.q_st, len(circ) - circ_hit.q_en
+        if st_clip == 0 and en_clip == 0:
+            break
 
-        fasta_msa = msa(fasta)
-        if len(fasta_msa) > 1:
-            continue
-
-        consensus_cnt += 1
-
-        # Filter 2 - Remove linear mapped reads
-        is_raw_mapped = 0
-        hit = None
-        for hit in ALIGNER.map(raw):
-            if not hit.is_primary:
-                continue
-
-            # Filter out linear reads
-            if hit.q_en - hit.q_st > max(len(raw) * 0.8, len(raw) - 50):
-                is_raw_mapped = 1
-        if is_raw_mapped:
-            continue
-        raw_unmapped_cnt += 1
-
-        if hit is not None:
-            raw_en, raw_st = hit.q_en, hit.q_st
+        if st_clip >= en_clip:
+            circ_junc = (circ_junc + st_clip) % len(circ)
         else:
-            raw_en, raw_st = None, None
+            circ_junc = (circ_junc - en_clip) % len(circ)
 
-        # Filter 3 - Remove reads that ccs doesn't mapped to genome
-        ccs_hit = None
-        for hit in ALIGNER.map(ccs):
-            if hit.is_primary:
-                ccs_hit = hit
-        if ccs_hit is None or ccs_hit.ctg in ['MT']:
+        if circ_junc in itered_junc:
+            break
+
+        circ = ccs[circ_junc:] + ccs[:circ_junc]
+        itered_junc[circ_junc] = 1
+    return circ
+
+
+def align_clip_segments(circ, hit):
+    """
+    Align clip bases
+    """
+    from skbio import DNA, local_pairwise_align_ssw
+    st_clip, en_clip = hit.q_st, len(circ) - hit.q_en
+    clip_r_st, clip_r_en = None, None
+
+    if st_clip + en_clip >= 20:
+        clip_seq = circ[hit.q_en:] + circ[:hit.q_st]
+
+        tmp_start = max(hit.r_st - 200000, 0)
+        tmp_end = min(hit.r_en + 200000, CONTIG_LEN[hit.ctg])
+
+        if hit.strand > 0:
+            tmp_alignment, tmp_score, tmp_interval = local_pairwise_align_ssw(
+                DNA(clip_seq), DNA(FAIDX.seq(hit.ctg, tmp_start, tmp_end)),
+                gap_open_penalty=1, gap_extend_penalty=1, match_score=1, mismatch_score=-1
+            )
+            clip_r_st, clip_r_en = tmp_start + tmp_interval[1][0], tmp_start + tmp_interval[1][1]
+        else:
+            tmp_alignment, tmp_score, tmp_interval = local_pairwise_align_ssw(
+                DNA(clip_seq), DNA(revcomp(FAIDX.seq(hit.ctg, tmp_start, tmp_end))),
+                gap_open_penalty=1, gap_extend_penalty=1, match_score=1, mismatch_score=-1
+            )
+            clip_r_st, clip_r_en = tmp_end - tmp_interval[1][1], tmp_end - tmp_interval[1][0]
+        clip_base = hit.q_st + len(circ) - hit.q_en - (tmp_interval[1][1] - tmp_interval[1][0]) + 1
+        circ_start = min(hit.r_st, clip_r_st) - 1
+        circ_end = max(hit.r_en, clip_r_en)
+    else:
+        circ_start = hit.r_st - 1
+        circ_end = hit.r_en
+        clip_base = st_clip + en_clip
+
+    return circ_start, circ_end, (clip_r_st, clip_r_en, clip_base)
+
+
+FAIDX = None
+ALIGNER = None
+SS_INDEX = None
+CONTIG_LEN = None
+def initializer(aligner, faidx, splice_site_index, contig_len):
+    global ALIGNER, FAIDX, SS_INDEX, CONTIG_LEN
+    ALIGNER = aligner
+    FAIDX = faidx
+    SS_INDEX = splice_site_index
+    CONTIG_LEN = contig_len
+
+
+def scan_chunk(chunk, is_canonical):
+    reads_cnt = defaultdict(int)
+    ret = []
+
+    short_reads = []
+    for read_id, segments, ccs, raw in chunk:
+        # Filter 1 - Remove linear mapped reads
+        raw_hit = get_primary_alignment(ALIGNER.map(raw))
+        if raw_hit and raw_hit.q_en - raw_hit.q_st > max(len(raw) * 0.8, len(raw) - 200):
             continue
-        ccs_mapped_cnt += 1
+        if raw_hit and raw_hit.q_en - raw_hit.q_st > 1.5 * len(ccs):
+            continue
 
-        # Filter 4 - check the accordance alignment results of non-repeat segments and ccs
+        raw_st = raw_hit.q_st if raw_hit else None
+        raw_en = raw_hit.q_en if raw_hit else None
+        reads_cnt['raw_unmapped'] += 1
+
+        # Filter 2 - Remove other mapped region that intersect with ccs
         seg_st = int(segments.split(';')[0].split('-')[0])
         seg_en = int(segments.split(';')[-1].split('-')[1])
-
-        # Remove CCS that not start from tailed end
-        if seg_st > 100 or seg_en < len(raw) - 100:
+        if raw_hit and (raw_en < seg_st or raw_st > seg_en):
             continue
 
-        # Align head and tail
-        seg_st_hit = None
-        for hit in ALIGNER.map(raw[:seg_st]):
-            if hit.is_primary:
-                seg_st_hit = hit
-        is_st_mapped = 1 if seg_st_hit is not None and seg_st_hit.mlen > seg_st * 0.6 else 0
-
-        seg_en_hit = None
-        for hit in ALIGNER.map(raw[seg_en:]):
-            if hit.is_primary:
-                seg_en_hit = hit
-        is_en_mapped = 1 if seg_en_hit is not None and seg_en_hit.mlen > (len(raw) - seg_en) * 0.6 else 0
-
-        is_accordance = 1
-        if is_st_mapped and seg_st_hit.ctg != ccs_hit.ctg:
-            is_accordance = 0
-        if is_en_mapped and seg_en_hit.ctg != ccs_hit.ctg:
-            is_accordance = 0
-        if is_accordance == 0:
+        ccs_hit = get_primary_alignment(ALIGNER.map(ccs * 2))
+        if ccs_hit is None and len(ccs) < 150:
+            short_reads.append((read_id, segments, ccs, raw))
+        if ccs_hit is None or seg_en - seg_st < ccs_hit.q_en - ccs_hit.q_st:
             continue
 
-        # Remove other mapped region that intersect with ccs
-        if raw_st is None or raw_en is None:
-            pass
-        elif raw_st + 50 < seg_st or seg_en + 50 < raw_en:
+        reads_cnt['ccs_mapped'] += 1
+
+        # Find back-spliced junction site
+        circ = find_bsj(ccs)
+
+        # Candidate alignment situation, more than 85%
+        circ_hit = get_primary_alignment(ALIGNER.map(circ))
+        if circ_hit is None or circ_hit.mlen < 0.75 * len(circ):
             continue
-        elif raw_en - raw_st > 1.5 * len(ccs):
+
+        circ_start, circ_end, clip_info = align_clip_segments(circ, circ_hit)
+        clip_base = clip_info[2]
+        if clip_base > 0.15 * len(ccs):
             continue
-        else:
-            pass
 
-        accordance_cnt += 1
-
-        # Filter 5 - Find BSJ site in CCS
-        tmp = ccs
-        tmp_junc = 0
-        last_m = 0
-        last_junc = 0
-
-        itered_junc = {}
-        while True:
-            tmp_hits = [hit for hit in ALIGNER.map(tmp) if hit.is_primary]
-            if len(tmp_hits) == 0:
-                break
-            tmp_hit = sorted(tmp_hits, key=lambda x: x.mlen, reverse=True)[0]
-            if tmp_hit.mlen < last_m:
-                tmp_junc = last_junc
-                break
-            last_m = tmp_hit.mlen
-            last_junc = tmp_junc
-            # print('{}/{}'.format(tmp_junc, len(ccs)), tmp_hit)
-
-            st_clip = tmp_hit.q_st
-            en_clip = len(tmp) - tmp_hit.q_en
-            if st_clip == 0 and en_clip == 0:
-                break
-
-            if st_clip >= en_clip:
-                tmp_junc = (tmp_junc + st_clip) % len(ccs)
-            else:
-                tmp_junc = (tmp_junc - en_clip) % len(ccs)
-
-            if tmp_junc in itered_junc:
-                break
-
-            tmp = ccs[tmp_junc:] + ccs[:tmp_junc]
-            itered_junc[tmp_junc] = 1
-
-        # CCS aligned more than 90%
-        tmp_hits = []
-        for hit in ALIGNER.map(tmp):
-            if hit.is_primary:
-                tmp_hits.append(hit)
-        if len(tmp_hits) == 0:
-            continue
-        tmp_hit = sorted(tmp_hits, key=lambda x: x.mlen, reverse=True)[0]
-        if tmp_hit.q_en - tmp_hit.q_st < 0.9 * len(ccs):
-            continue
-        bsj_cnt += 1
+        reads_cnt['bsj'] += 1
 
         # Retrive circRNA positions, convert minimap2 position to real position
-        ss_site, us_free, ds_free = search_splice_signal(tmp_hit.ctg, tmp_hit.r_st, tmp_hit.r_en,
-                                                         tmp_hit.q_st, len(ccs) - tmp_hit.q_en)
+        ss_site, us_free, ds_free = search_splice_signal(circ_hit.ctg, circ_start, circ_end, clip_base)
         if ss_site is None:
             # Keep reads that seemed to generate from circRNAs, but cannot get splice signal
             if not is_canonical:
-                ret.append((read_id, '{}:{}-{}'.format(tmp_hit.ctg, tmp_hit.r_st + 1, tmp_hit.r_en),
-                            'NA', 'NA', 'NA', tmp_hit.q_st, len(ccs) - tmp_hit.q_en, tmp))
+                ret.append((
+                    read_id, '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end),
+                    'NA', 'NA', 'NA', '{}-{}'.format(clip_base, len(ccs)), circ
+                ))
             continue
 
         ss_id, strand, us_shift, ds_shift = ss_site
+        circ_start += us_shift
+        circ_end += ds_shift
 
         # if is_canonical: keep canonical splice site only
         ss = ss_id.split('|')[0]
         if is_canonical and ss[-1] == '*' and ss != 'AG-GT*':
             continue
 
-        circ_ctg = tmp_hit.ctg
-        circ_start = tmp_hit.r_st + us_shift
-        circ_end = tmp_hit.r_en + ds_shift
-
-        tmp_strand = '+' if tmp_hit.strand == '1' else '-'
-        circ_id = '{}:{}-{}'.format(circ_ctg, circ_start + 1, circ_end)
-
-        # if read_id.split('|')[2] != circ_id:
-        #     print(read_id)
-        # print(tmp_hit.ctg, tmp_hit.r_st, tmp_hit.r_en, len(tmp), tmp_hit.q_st, tmp_hit.q_en)
+        circ_id = '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end)
 
         # Get Cirexons
-        cir_exons = get_blocks(tmp_hit)
-        cir_exons[0][0] = circ_start # Trim 1bp for correct boundary of minimap2 alignment
+        cir_exons = get_blocks(circ_hit)
+        cir_exons = merge_exons(cir_exons, clip_info)
+
+        cir_exons[0][0] = circ_start
         cir_exons[-1][1] = circ_end
 
         cir_exon_tag = []
         for cir_exon_start, cir_exon_end, _ in cir_exons:
             cir_exon_tag.append('{}-{}'.format(cir_exon_start + 1, cir_exon_end))
-            # cir_exon_ss = search_splice_signal(tmp_hit.ctg, cir_exon_start, cir_exon_end)
-            # if cir_exon_ss is None:
-            #     cir_exon_tag.append('{}-{}|?'.format(cir_exon_start, cir_exon_end))
-            # else:
-            #     ss_id, ss_strand, us_shift, ds_shift = cir_exon_ss
-            #     cir_exon_tag.append('{}-{}|{}'.format(cir_exon_start))
-            # cir_exon_tag.append('{}-{}|{}|{}'.format(cir_exon_start, cir_exon_end, strand, ss_id))
 
         # BSJ correction for 5' prime region
         if strand == '+':
             correction_shift = min(max(us_shift, us_free), ds_free)
-            circ_seq = tmp[correction_shift:] + tmp[:correction_shift]
+            circ_seq = circ[correction_shift:] + circ[:correction_shift]
         else:
             correction_shift = min(max(ds_shift, us_free), ds_free)
-            circ_seq = revcomp(tmp[correction_shift:] + tmp[:correction_shift])
+            circ_seq = revcomp(circ[correction_shift:] + circ[:correction_shift])
 
         ret.append((
-            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, tmp_hit.q_st, len(ccs) - tmp_hit.q_en, circ_seq
+            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-{}'.format(clip_base, len(circ)), circ_seq
         ))
-        signal_cnt += 1
+        reads_cnt['signal'] += 1
 
-    return consensus_cnt, raw_unmapped_cnt, ccs_mapped_cnt, accordance_cnt, bsj_cnt, signal_cnt, ret
+    return reads_cnt, short_reads, ret
 
 
-def filter_ccs_reads(ccs_seq, minimap_index, ss_indx, is_canonical, out_dir, prefix, threads, debugging):
-    from collections import namedtuple
+def scan_ccs_reads(ccs_seq, ref_fasta, ss_index, is_canonical, out_dir, prefix, threads):
     from multiprocessing import Pool
     from CIRI.utils import grouper
-    # Read = namedtuple('Read', 'segments ccs raw')
-    reads_count = {
-        'consensus': 0,
-        'raw_unmapped': 0,
-        'ccs_mapped': 0,
-        'accordance': 0,
-        'bsj': 0,
-        'splice_signal': 0,
-    }
 
-    minimap_aligner = mp.Aligner(minimap_index, n_threads=threads, preset='splice')
+    import mappy as mp
+
+    faidx = Faidx(ref_fasta)
+    contig_len = faidx.contig_len
+    faidx.close()
+
+    # First scanning using minimap2
+    minimap_aligner = mp.Aligner(ref_fasta, n_threads=threads, preset='splice')
 
     chunk_size = 250
     chunk_cnt = 0
     jobs = []
-    pool = Pool(threads, initializer, (minimap_aligner, ss_indx))
+    pool = Pool(threads, initializer, (minimap_aligner, minimap_aligner, ss_index, contig_len))
     for reads in grouper(list(ccs_seq), chunk_size):
         chunk = [[i, ] + ccs_seq[i] for i in reads if i is not None]
         chunk_cnt += 1
-        jobs.append(pool.apply_async(parse_chunk, (chunk, is_canonical)))
+        jobs.append(pool.apply_async(scan_chunk, (chunk, is_canonical)))
     pool.close()
 
     prog = ProgressBar()
     finished_cnt = 0
 
+    reads_count = defaultdict(int)
+    short_reads = []
     with open('{}/{}.cand_circ.fa'.format(out_dir, prefix), 'w') as out:
         for job in jobs:
             finished_cnt += 1
 
-            tmp_consensus, tmp_raw_unmapped, tmp_ccs_mapped, tmp_accordance, tmp_bsj, tmp_signal, ret = job.get()
-            reads_count['consensus'] += tmp_consensus
-            reads_count['raw_unmapped'] += tmp_raw_unmapped
-            reads_count['ccs_mapped'] += tmp_ccs_mapped
-            reads_count['accordance'] += tmp_accordance
-            reads_count['bsj'] += tmp_bsj
-            reads_count['splice_signal'] += tmp_signal
+            tmp_cnt, tmp_short, ret = job.get()
+            for key, value in tmp_cnt.items():
+                reads_count[key] += value
 
-            for read_id, circ_id, strand, cir_exon_tag, ss_id, head, tail, circ_seq in ret:
-                out.write('>{}\t{}\t{}\t{}\t{}\t{}:{}:{}\n{}\n'.format(
-                    read_id, circ_id, strand, cir_exon_tag, ss_id, head, tail, len(circ_seq), circ_seq
+            short_reads += tmp_short
+
+            for read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, circ_seq in ret:
+                out.write('>{}\t{}\t{}\t{}\t{}\t{}\n{}\n'.format(
+                    read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, circ_seq
                 ))
             prog.update(100 * finished_cnt / chunk_cnt)
 
     pool.join()
     prog.update(100)
+
+    return reads_count, short_reads
+
+
+def recover_chunk(chunk, is_canonical):
+    reads_cnt = defaultdict(int)
+    ret = []
+
+    for read_id, segments, ccs, raw in chunk:
+        # Remove other mapped region that intersect with ccs
+        seg_st = int(segments.split(';')[0].split('-')[0])
+        seg_en = int(segments.split(';')[-1].split('-')[1])
+
+        ccs_hit = get_primary_alignment(ALIGNER.map(ccs * 2))
+        if ccs_hit is None or seg_en - seg_st < ccs_hit.q_en - ccs_hit.q_st:
+            continue
+
+        reads_cnt['ccs_mapped'] += 1
+
+        # Find back-spliced junction site
+        circ = find_bsj(ccs)
+
+        # Candidate alignment situation, more than 85%
+        circ_hit = get_primary_alignment(ALIGNER.map(circ))
+        if circ_hit is None:
+            continue
+
+        circ_start, circ_end, clip_info = align_clip_segments(circ, circ_hit)
+        clip_base = clip_info[2]
+        if clip_base > 0.15 * len(ccs):
+            continue
+
+        reads_cnt['bsj'] += 1
+
+        # Retrive circRNA positions, convert minimap2 position to real position
+        ss_site, us_free, ds_free = search_splice_signal(circ_hit.ctg, circ_start, circ_end, clip_base)
+        if ss_site is None:
+            # Keep reads that seemed to generate from circRNAs, but cannot get splice signal
+            if not is_canonical:
+                ret.append((
+                    read_id, '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end),
+                    'NA', 'NA', 'NA', '{}-{}'.format(clip_base, len(ccs)), circ
+                ))
+            continue
+
+        ss_id, strand, us_shift, ds_shift = ss_site
+        circ_start += us_shift
+        circ_end += ds_shift
+
+        # if is_canonical: keep canonical splice site only
+        ss = ss_id.split('|')[0]
+        if is_canonical and ss[-1] == '*' and ss != 'AG-GT*':
+            continue
+
+        circ_id = '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end)
+
+        # Get Cirexons
+        cir_exons = get_blocks(circ_hit)
+        cir_exons = merge_exons(cir_exons, clip_info)
+
+        cir_exons[0][0] = circ_start
+        cir_exons[-1][1] = circ_end
+
+        cir_exon_tag = []
+        for cir_exon_start, cir_exon_end, _ in cir_exons:
+            cir_exon_tag.append('{}-{}'.format(cir_exon_start + 1, cir_exon_end))
+
+        # BSJ correction for 5' prime region
+        if strand == '+':
+            correction_shift = min(max(us_shift, us_free), ds_free)
+            circ_seq = circ[correction_shift:] + circ[:correction_shift]
+        else:
+            correction_shift = min(max(ds_shift, us_free), ds_free)
+            circ_seq = revcomp(circ[correction_shift:] + circ[:correction_shift])
+
+        ret.append((
+            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-{}'.format(clip_base, len(circ)), circ_seq
+        ))
+        reads_cnt['signal'] += 1
+
+    return reads_cnt, ret
+
+
+def recover_ccs_reads(short_reads, ref_fasta, ss_index, is_canonical, out_dir, prefix, threads):
+    from multiprocessing import Pool
+    from CIRI.utils import grouper
+
+    from bwapy import BwaAligner
+
+    # Second scanning of short reads
+    faidx = Faidx(ref_fasta)
+    contig_len = faidx.contig_len
+
+    options = '-x ont2d -T 19'
+    bwa_aligner = Aligner(
+        BwaAligner('/home/zhangjy/database/genome/gencode.vM20/_BWAindex/mm10.fa', options=options))
+
+    chunk_size = 250
+    chunk_cnt = 0
+    jobs = []
+    pool = Pool(threads, initializer, (bwa_aligner, faidx, ss_index, contig_len))
+    for reads in grouper(short_reads, chunk_size):
+        chunk = [i for i in reads if i is not None]
+        jobs.append(pool.apply_async(recover_chunk, (chunk, is_canonical)))
+        chunk_cnt += 1
+    pool.close()
+
+    prog = ProgressBar()
+    finished_cnt = 0
+
+    reads_count = defaultdict(int)
+    with open('{}/{}.cand_circ.fa'.format(out_dir, prefix), 'a') as out:
+        for job in jobs:
+            finished_cnt += 1
+
+            tmp_cnt, ret = job.get()
+            for key, value in tmp_cnt.items():
+                reads_count[key] += value
+
+            for read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, circ_seq in ret:
+                out.write('>{}\t{}\t{}\t{}\t{}\t{}\n{}\n'.format(
+                    read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, circ_seq
+                ))
+            prog.update(100 * finished_cnt / chunk_cnt)
+
+    pool.join()
+    prog.update(100)
+
+    faidx.close()
 
     return reads_count

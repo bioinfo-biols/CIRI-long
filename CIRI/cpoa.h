@@ -49,3 +49,5 @@ static inline char *fasta_to_ccs(vector<string> sequences,
 	strcpy (cons_str, consensus.c_str());
     return cons_str;
 }
+
+
