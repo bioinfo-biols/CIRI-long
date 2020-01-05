@@ -3,6 +3,7 @@ import os
 import sys
 import pickle
 import argparse
+import json
 from collections import defaultdict
 
 
@@ -103,6 +104,9 @@ def main():
     # logger.info('CCS & Raw aligned concordantly: {}'.format(reads_count['accordance']))
     logger.info('BSJ: {}'.format(reads_count['bsj']))
     logger.info('Splice signal: {}'.format(reads_count['signal']))
+
+    with open('{}/{}.json'.format(out_dir, prefix), 'w') as f:
+        json.dump(reads_count, f)
 
     logger.info('All Finished!')
 
