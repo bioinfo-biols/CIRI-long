@@ -239,6 +239,12 @@ def circular_finder(read_id, seq, k=8, use_hpc=True, p_match=.85, p_indel=.1, d_
     if segments[0][0] > 100 or segments[-1][-1] < len(seq) - 100:
         is_circular = 0
 
+    if len(segments) < 2:
+        is_circular = 0
+
+    if len(segments) == 2 and segments[-1][1] - segments[-1][0] < 30:
+        is_circular = 0
+
     return segments, is_circular
 
 

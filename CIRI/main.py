@@ -57,7 +57,7 @@ def main():
 
     # Scan for repeats and CCS
     reads_count = defaultdict(int)
-    if os.path.exists('{}/tmp/{}.ccs.fa'.format(out_dir, prefix)) and os.path.exists('{}/tmp/{}.raw.fa'.format(out_dir, prefix)):
+    if not debugging and os.path.exists('{}/tmp/{}.ccs.fa'.format(out_dir, prefix)) and os.path.exists('{}/tmp/{}.raw.fa'.format(out_dir, prefix)):
         logger.info('Step 1 - Loading circRNA candidates in previous run')
         ccs_seq = load_ccs_reads(out_dir, prefix)
         reads_count['consensus'] = len(ccs_seq)
