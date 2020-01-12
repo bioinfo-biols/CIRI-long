@@ -18,7 +18,7 @@ help:
 
 lib:
 	mkdir -p vendor/spoa/build
-	cd vendor/spoa/build && cmake -DCMAKE_BUILD_TYPE=Release .. && make
+	cd vendor/spoa/build && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON .. && make
 	cd vendor/bwapy && make bwa/libbwa.a && python setup.py install
 
 prepare:
