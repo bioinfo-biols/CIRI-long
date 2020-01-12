@@ -1,3 +1,6 @@
 [submodule "bwapy"]
 	path = vendor/bwapy
 	url = https://github.com/nanoporetech/bwapy.git
+[submodule "spoa"]
+	path = vendor/spoa
+	url = https://github.com/rvaser/spoa
