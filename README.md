@@ -3,7 +3,22 @@
 [![Build Status](https://travis-ci.com/Kevinzjy/CIRI-long.svg?token=sq9vq2uzixNezTJhts8Z&branch=master)](https://travis-ci.com/Kevinzjy/CIRI-long)
 [![The MIT License](https://img.shields.io/badge/license-MIT-orange.svg)](https://github.com/Kevinzjy/CIRI-long/blob/master/LICENSE)
 
-Circular RNA Identification for Nanopore Sequencing 
+Circular RNA Identification for Nanopore Sequencing Data
+
+### Author ###
+
+Authors: Jinyang Zhang(zhangjinyang@biols.ac.cn), Fangqing Zhao(zfdq@biols.ac.cn)
+
+Maintainer: Jinyang Zhang
+
+### Release Notes ###
+
+- version 0.2.0: use minimap / bwapy for bsj detection
+- Version 0.1.0: basic function of CIRI-long
+
+### License ### 
+
+The code is released under the MIT License. See the `LICENSE` file for more detail
 
 #### Dependency
 
@@ -51,3 +66,4 @@ make test
 # Deactivate
 deactivate
 ```
+
