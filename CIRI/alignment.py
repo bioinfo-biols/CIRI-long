@@ -723,8 +723,7 @@ def recover_ccs_reads(short_reads, ref_fasta, ss_index, is_canonical, out_dir, p
     contig_len = faidx.contig_len
 
     options = '-x ont2d -T 19'
-    bwa_aligner = Aligner(
-        BwaAligner('/home/zhangjy/database/genome/gencode.vM20/_BWAindex/mm10.fa', options=options))
+    bwa_aligner = Aligner(BwaAligner(ref_fasta, options=options))
 
     chunk_size = 250
     chunk_cnt = 0
