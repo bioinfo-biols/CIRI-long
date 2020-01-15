@@ -147,7 +147,6 @@ class Faidx(object):
         self.faidx = faidx
         self.contig_len = {contig: faidx.get_reference_length(contig) for contig in faidx.references}
 
-
     def seq(self, contig, start, end):
         return self.faidx.fetch(contig, start, end)
 
@@ -453,18 +452,20 @@ def align_clip_segments(circ, hit):
         tmp_start = max(hit.r_st - 200000, 0)
         tmp_end = min(hit.r_en + 200000, CONTIG_LEN[hit.ctg])
 
+        tmp_seq = FAIDX.seq(hit.ctg, tmp_start, tmp_end)
         if hit.strand > 0:
             tmp_alignment, tmp_score, tmp_interval = local_pairwise_align_ssw(
-                DNA(clip_seq), DNA(FAIDX.seq(hit.ctg, tmp_start, tmp_end)),
+                DNA(clip_seq), DNA(tmp_seq),
                 gap_open_penalty=1, gap_extend_penalty=1, match_score=1, mismatch_score=-1
             )
             clip_r_st, clip_r_en = tmp_start + tmp_interval[1][0], tmp_start + tmp_interval[1][1]
         else:
             tmp_alignment, tmp_score, tmp_interval = local_pairwise_align_ssw(
-                DNA(clip_seq), DNA(revcomp(FAIDX.seq(hit.ctg, tmp_start, tmp_end))),
+                DNA(clip_seq), DNA(revcomp(tmp_seq)),
                 gap_open_penalty=1, gap_extend_penalty=1, match_score=1, mismatch_score=-1
             )
             clip_r_st, clip_r_en = tmp_end - tmp_interval[1][1], tmp_end - tmp_interval[1][0]
+
         clip_base = hit.q_st + len(circ) - hit.q_en - (tmp_interval[1][1] - tmp_interval[1][0]) + 1
         circ_start = min(hit.r_st, clip_r_st) - 1
         circ_end = max(hit.r_en, clip_r_en)
@@ -728,7 +729,7 @@ def recover_ccs_reads(short_reads, ref_fasta, ss_index, is_canonical, out_dir, p
     chunk_size = 250
     chunk_cnt = 0
     jobs = []
-    pool = Pool(threads, initializer, (bwa_aligner, faidx, ss_index, contig_len))
+    pool = Pool(1, initializer, (bwa_aligner, faidx, ss_index, contig_len))
     for reads in grouper(short_reads, chunk_size):
         chunk = [i for i in reads if i is not None]
         jobs.append(pool.apply_async(recover_chunk, (chunk, is_canonical)))
