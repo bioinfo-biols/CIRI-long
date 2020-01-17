@@ -443,16 +443,22 @@ def align_clip_segments(circ, hit):
     Align clip bases
     """
     from skbio import DNA, local_pairwise_align_ssw
+    from collections import Counter
     st_clip, en_clip = hit.q_st, len(circ) - hit.q_en
     clip_r_st, clip_r_en = None, None
 
     if st_clip + en_clip >= 20:
         clip_seq = circ[hit.q_en:] + circ[:hit.q_st]
+        if len(clip_seq) > 0.6 * len(circ):
+            return None, None, None
 
         tmp_start = max(hit.r_st - 200000, 0)
         tmp_end = min(hit.r_en + 200000, CONTIG_LEN[hit.ctg])
 
         tmp_seq = FAIDX.seq(hit.ctg, tmp_start, tmp_end)
+        if Counter(tmp_seq)['N'] >= 0.3 * (tmp_end - tmp_start):
+            return None, None, None
+
         if hit.strand > 0:
             tmp_alignment, tmp_score, tmp_interval = local_pairwise_align_ssw(
                 DNA(clip_seq), DNA(tmp_seq),
@@ -529,6 +535,9 @@ def scan_chunk(chunk, is_canonical):
             continue
 
         circ_start, circ_end, clip_info = align_clip_segments(circ, circ_hit)
+        if circ_start is None or circ_end is None:
+            continue
+
         clip_base = clip_info[2]
         if clip_base > 0.15 * len(ccs):
             continue
@@ -658,6 +667,9 @@ def recover_chunk(chunk, is_canonical):
             continue
 
         circ_start, circ_end, clip_info = align_clip_segments(circ, circ_hit)
+        if circ_start is None or circ_end is None:
+            continue
+
         clip_base = clip_info[2]
         if clip_base > 0.15 * len(ccs):
             continue
