@@ -631,9 +631,9 @@ def scan_ccs_reads(ccs_seq, ref_fasta, ss_index, is_canonical, out_dir, prefix, 
 
             short_reads += tmp_short
 
-            for read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, circ_seq in ret:
-                out.write('>{}\t{}\t{}\t{}\t{}\t{}\n{}\n'.format(
-                    read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, circ_seq
+            for read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, segments, circ_seq in ret:
+                out.write('>{}\t{}\t{}\t{}\t{}\t{}\t{}\n{}\n'.format(
+                    read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, segments, circ_seq
                 ))
             prog.update(100 * finished_cnt / chunk_cnt)
 
@@ -761,7 +761,7 @@ def recover_ccs_reads(short_reads, ref_fasta, ss_index, is_canonical, out_dir, p
                 reads_count[key] += value
 
             for read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, segments, circ_seq in ret:
-                out.write('>{}\t{}\t{}\t{}\t{}\t{}\n{}\n'.format(
+                out.write('>{}\t{}\t{}\t{}\t{}\t{}\t{}\n{}\n'.format(
                     read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, segments, circ_seq
                 ))
             prog.update(100 * finished_cnt / chunk_cnt)
