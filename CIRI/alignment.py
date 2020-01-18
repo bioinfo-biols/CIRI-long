@@ -586,7 +586,7 @@ def scan_chunk(chunk, is_canonical):
             circ_seq = revcomp(circ[correction_shift:] + circ[:correction_shift])
 
         ret.append((
-            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-{}'.format(clip_base, len(circ)), circ_seq
+            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-{}'.format(clip_base, len(circ)), segments, circ_seq
         ))
         reads_cnt['signal'] += 1
 
@@ -718,7 +718,7 @@ def recover_chunk(chunk, is_canonical):
             circ_seq = revcomp(circ[correction_shift:] + circ[:correction_shift])
 
         ret.append((
-            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-{}'.format(clip_base, len(circ)), circ_seq
+            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-{}'.format(clip_base, len(circ)), segments, circ_seq
         ))
         reads_cnt['signal'] += 1
 
@@ -760,9 +760,9 @@ def recover_ccs_reads(short_reads, ref_fasta, ss_index, is_canonical, out_dir, p
             for key, value in tmp_cnt.items():
                 reads_count[key] += value
 
-            for read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, circ_seq in ret:
+            for read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, segments, circ_seq in ret:
                 out.write('>{}\t{}\t{}\t{}\t{}\t{}\n{}\n'.format(
-                    read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, circ_seq
+                    read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, segments, circ_seq
                 ))
             prog.update(100 * finished_cnt / chunk_cnt)
 
