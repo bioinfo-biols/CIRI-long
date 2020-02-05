@@ -147,7 +147,6 @@ class Faidx(object):
         self.faidx = faidx
         self.contig_len = {contig: faidx.get_reference_length(contig) for contig in faidx.references}
 
-
     def seq(self, contig, start, end):
         return self.faidx.fetch(contig, start, end)
 
@@ -444,27 +443,35 @@ def align_clip_segments(circ, hit):
     Align clip bases
     """
     from skbio import DNA, local_pairwise_align_ssw
+    from collections import Counter
     st_clip, en_clip = hit.q_st, len(circ) - hit.q_en
     clip_r_st, clip_r_en = None, None
 
     if st_clip + en_clip >= 20:
         clip_seq = circ[hit.q_en:] + circ[:hit.q_st]
+        if len(clip_seq) > 0.6 * len(circ):
+            return None, None, None
 
         tmp_start = max(hit.r_st - 200000, 0)
         tmp_end = min(hit.r_en + 200000, CONTIG_LEN[hit.ctg])
 
+        tmp_seq = FAIDX.seq(hit.ctg, tmp_start, tmp_end)
+        if Counter(tmp_seq)['N'] >= 0.3 * (tmp_end - tmp_start):
+            return None, None, None
+
         if hit.strand > 0:
             tmp_alignment, tmp_score, tmp_interval = local_pairwise_align_ssw(
-                DNA(clip_seq), DNA(FAIDX.seq(hit.ctg, tmp_start, tmp_end)),
+                DNA(clip_seq), DNA(tmp_seq),
                 gap_open_penalty=1, gap_extend_penalty=1, match_score=1, mismatch_score=-1
             )
             clip_r_st, clip_r_en = tmp_start + tmp_interval[1][0], tmp_start + tmp_interval[1][1]
         else:
             tmp_alignment, tmp_score, tmp_interval = local_pairwise_align_ssw(
-                DNA(clip_seq), DNA(revcomp(FAIDX.seq(hit.ctg, tmp_start, tmp_end))),
+                DNA(clip_seq), DNA(revcomp(tmp_seq)),
                 gap_open_penalty=1, gap_extend_penalty=1, match_score=1, mismatch_score=-1
             )
             clip_r_st, clip_r_en = tmp_end - tmp_interval[1][1], tmp_end - tmp_interval[1][0]
+
         clip_base = hit.q_st + len(circ) - hit.q_en - (tmp_interval[1][1] - tmp_interval[1][0]) + 1
         circ_start = min(hit.r_st, clip_r_st) - 1
         circ_end = max(hit.r_en, clip_r_en)
@@ -528,6 +535,9 @@ def scan_chunk(chunk, is_canonical):
             continue
 
         circ_start, circ_end, clip_info = align_clip_segments(circ, circ_hit)
+        if circ_start is None or circ_end is None:
+            continue
+
         clip_base = clip_info[2]
         if clip_base > 0.15 * len(ccs):
             continue
@@ -541,7 +551,7 @@ def scan_chunk(chunk, is_canonical):
             if not is_canonical:
                 ret.append((
                     read_id, '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end),
-                    'NA', 'NA', 'NA', '{}-{}'.format(clip_base, len(ccs)), circ
+                    'NA', 'NA', 'NA', '{}-{}'.format(clip_base, len(ccs)), segments, circ
                 ))
             continue
 
@@ -576,7 +586,7 @@ def scan_chunk(chunk, is_canonical):
             circ_seq = revcomp(circ[correction_shift:] + circ[:correction_shift])
 
         ret.append((
-            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-{}'.format(clip_base, len(circ)), circ_seq
+            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-{}'.format(clip_base, len(circ)), segments, circ_seq
         ))
         reads_cnt['signal'] += 1
 
@@ -621,9 +631,9 @@ def scan_ccs_reads(ccs_seq, ref_fasta, ss_index, is_canonical, out_dir, prefix, 
 
             short_reads += tmp_short
 
-            for read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, circ_seq in ret:
-                out.write('>{}\t{}\t{}\t{}\t{}\t{}\n{}\n'.format(
-                    read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, circ_seq
+            for read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, segments, circ_seq in ret:
+                out.write('>{}\t{}\t{}\t{}\t{}\t{}\t{}\n{}\n'.format(
+                    read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, segments, circ_seq
                 ))
             prog.update(100 * finished_cnt / chunk_cnt)
 
@@ -657,6 +667,9 @@ def recover_chunk(chunk, is_canonical):
             continue
 
         circ_start, circ_end, clip_info = align_clip_segments(circ, circ_hit)
+        if circ_start is None or circ_end is None:
+            continue
+
         clip_base = clip_info[2]
         if clip_base > 0.15 * len(ccs):
             continue
@@ -670,7 +683,7 @@ def recover_chunk(chunk, is_canonical):
             if not is_canonical:
                 ret.append((
                     read_id, '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end),
-                    'NA', 'NA', 'NA', '{}-{}'.format(clip_base, len(ccs)), circ
+                    'NA', 'NA', 'NA', '{}-{}'.format(clip_base, len(ccs)), segments, circ
                 ))
             continue
 
@@ -705,7 +718,7 @@ def recover_chunk(chunk, is_canonical):
             circ_seq = revcomp(circ[correction_shift:] + circ[:correction_shift])
 
         ret.append((
-            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-{}'.format(clip_base, len(circ)), circ_seq
+            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-{}'.format(clip_base, len(circ)), segments, circ_seq
         ))
         reads_cnt['signal'] += 1
 
@@ -723,13 +736,12 @@ def recover_ccs_reads(short_reads, ref_fasta, ss_index, is_canonical, out_dir, p
     contig_len = faidx.contig_len
 
     options = '-x ont2d -T 19'
-    bwa_aligner = Aligner(
-        BwaAligner('/home/zhangjy/database/genome/gencode.vM20/_BWAindex/mm10.fa', options=options))
+    bwa_aligner = Aligner(BwaAligner(ref_fasta, options=options))
 
     chunk_size = 250
     chunk_cnt = 0
     jobs = []
-    pool = Pool(threads, initializer, (bwa_aligner, faidx, ss_index, contig_len))
+    pool = Pool(1, initializer, (bwa_aligner, faidx, ss_index, contig_len))
     for reads in grouper(short_reads, chunk_size):
         chunk = [i for i in reads if i is not None]
         jobs.append(pool.apply_async(recover_chunk, (chunk, is_canonical)))
@@ -748,9 +760,9 @@ def recover_ccs_reads(short_reads, ref_fasta, ss_index, is_canonical, out_dir, p
             for key, value in tmp_cnt.items():
                 reads_count[key] += value
 
-            for read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, circ_seq in ret:
-                out.write('>{}\t{}\t{}\t{}\t{}\t{}\n{}\n'.format(
-                    read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, circ_seq
+            for read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, segments, circ_seq in ret:
+                out.write('>{}\t{}\t{}\t{}\t{}\t{}\t{}\n{}\n'.format(
+                    read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, segments, circ_seq
                 ))
             prog.update(100 * finished_cnt / chunk_cnt)
 
@@ -760,3 +772,11 @@ def recover_ccs_reads(short_reads, ref_fasta, ss_index, is_canonical, out_dir, p
     faidx.close()
 
     return reads_count
+
+
+def check_read(segments, seq):
+    from poa import consensus
+    fasta = [(i, seq[int(i.split('-')[0]):int(i.split('-')[1])]) for i in segments.split(';')]
+    consensus(fasta, alignment_type=1,
+                     match=1, mismatch=-1, gap=-1, extension=-1, gap_affine=-1, extension_affine=-1,
+                     debug=1)

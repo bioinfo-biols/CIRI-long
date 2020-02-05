@@ -41,6 +41,14 @@ def split_hpc_kmers(seq, k=8):
             yield x + 1, ''.join(hpc[-k:])
 
 
+def compress_seq(seq):
+    hpc = [seq[0], ]
+    for x, (i, j) in enumerate(zip(seq[:-1], seq[1:])):
+        if i != j:
+            hpc.append(j)
+    return ''.join(hpc)
+
+
 def estimate_distance(kmer_occ, p_indel, d_min):
     from scipy.stats.kde import gaussian_kde
     tuple_dis = []
@@ -141,18 +149,6 @@ def optimal_chains(hits):
     return chains[0]
 
 
-def gap_function(x, y):
-    """
-    Second affine gap function
-    """
-    if y == 0: # No gap
-        return 0
-    elif y == 1:
-        return -8
-    else:
-        return - min(8 + y * 2, 24 + y)
-
-
 def split_sequence(primary_chain, seq, p_match, p_indel):
     from Bio import pairwise2
 
@@ -250,6 +246,7 @@ def circular_finder(read_id, seq, k=8, use_hpc=True, p_match=.85, p_indel=.1, d_
 
 def find_consensus(header, seq):
     from poa import consensus
+    from Levenshtein import distance
 
     # Trim sequence
     if len(seq) <= 50:
@@ -281,6 +278,13 @@ def find_consensus(header, seq):
     ccs = consensus(fasta, alignment_type=1,
                     match=10, mismatch=-4, gap=-8, extension=-2, gap_affine=-24, extension_affine=-4,
                     debug=0)
+
+    hpc_ccs = compress_seq(ccs)
+    dis_body = [distance(compress_seq(i[1]), hpc_ccs) / len(ccs) for i in fasta[:-1]]
+    hpc_tail = compress_seq(fasta[-1][1])
+    dis_tail = distance(hpc_tail, ccs[:len(hpc_tail)]) / len(hpc_tail)
+    if max(dis_body) > 0.5 or dis_tail > 0.5:
+        return None, None, None
 
     segments = ';'.join(['{}-{}'.format(s, e) for s, e in chains])
 
