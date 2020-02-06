@@ -279,11 +279,15 @@ def find_consensus(header, seq):
                     match=10, mismatch=-4, gap=-8, extension=-2, gap_affine=-24, extension_affine=-4,
                     debug=0)
 
-    hpc_ccs = compress_seq(ccs)
-    dis_body = [distance(compress_seq(i[1]), hpc_ccs) / len(ccs) for i in fasta[:-1]]
-    hpc_tail = compress_seq(fasta[-1][1])
-    dis_tail = distance(hpc_tail, ccs[:len(hpc_tail)]) / len(hpc_tail)
-    if max(dis_body) > 0.5 or dis_tail > 0.5:
+    # Check segment similarity
+    tail = fasta[-1][1]
+    if len(fasta) == 2:
+        dis_body = distance(fasta[0][1][:len(tail)], ccs[:len(tail)]) / len(tail)
+    else:
+        dis_body = max([distance(i[1], ccs) / len(ccs) for i in fasta[:-1]])
+    dis_tail = distance(tail, ccs[:len(tail)]) / len(tail)
+
+    if dis_body > 0.2 or dis_tail > 0.35:
         return None, None, None
 
     segments = ';'.join(['{}-{}'.format(s, e) for s, e in chains])

@@ -13,6 +13,7 @@ Maintainer: Jinyang Zhang
 
 ### Release Notes ###
 
+- version 0.3.0: stringent filter for repeat segments identification
 - version 0.2.0: use minimap / bwapy for bsj detection
 - Version 0.1.0: basic function of CIRI-long
 
