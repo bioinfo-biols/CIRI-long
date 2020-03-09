@@ -442,7 +442,6 @@ def align_clip_segments(circ, hit):
     """
     Align clip bases
     """
-    from lib.striped_smith_waterman.ssw_wrap import Aligner
     from skbio import DNA, local_pairwise_align_ssw
     from collections import Counter
     st_clip, en_clip = hit.q_st, len(circ) - hit.q_en
@@ -460,8 +459,6 @@ def align_clip_segments(circ, hit):
         if Counter(tmp_seq)['N'] >= 0.3 * (tmp_end - tmp_start):
             return None, None, None
 
-        if len(clip_seq) == 437:
-            print(1)
         if hit.strand > 0:
             tmp_alignment, tmp_score, tmp_interval = local_pairwise_align_ssw(
                 DNA(clip_seq), DNA(tmp_seq),
@@ -476,6 +473,47 @@ def align_clip_segments(circ, hit):
             clip_r_st, clip_r_en = tmp_end - tmp_interval[1][1], tmp_end - tmp_interval[1][0]
 
         clip_base = hit.q_st + len(circ) - hit.q_en - (tmp_interval[1][1] - tmp_interval[1][0]) + 1
+        circ_start = min(hit.r_st, clip_r_st) - 1
+        circ_end = max(hit.r_en, clip_r_en)
+    else:
+        circ_start = hit.r_st - 1
+        circ_end = hit.r_en
+        clip_base = st_clip + en_clip
+
+    return circ_start, circ_end, (clip_r_st, clip_r_en, clip_base)
+
+
+def align_clip_segments_2(circ, hit):
+    """
+    Align clip bases
+    """
+    from lib.striped_smith_waterman.ssw_wrap import Aligner
+    from collections import Counter
+    st_clip, en_clip = hit.q_st, len(circ) - hit.q_en
+    clip_r_st, clip_r_en = None, None
+
+    if st_clip + en_clip >= 20:
+        clip_seq = circ[hit.q_en:] + circ[:hit.q_st]
+        if len(clip_seq) > 0.6 * len(circ):
+            return None, None, None
+
+        tmp_start = max(hit.r_st - 200000, 0)
+        tmp_end = min(hit.r_en + 200000, CONTIG_LEN[hit.ctg])
+
+        tmp_seq = FAIDX.seq(hit.ctg, tmp_start, tmp_end)
+        if Counter(tmp_seq)['N'] >= 0.3 * (tmp_end - tmp_start):
+            return None, None, None
+
+        if hit.strand > 0:
+            ssw = Aligner(tmp_seq, match=1, mismatch=1, gap_open=1, gap_extend=1)
+            align_res = ssw.align(clip_seq)
+            clip_r_st, clip_r_en = tmp_start + align_res.ref_begin, tmp_start + align_res.ref_end
+        else:
+            ssw = Aligner(revcomp(tmp_seq), match=1, mismatch=1, gap_open=1, gap_extend=1)
+            align_res = ssw.align(clip_seq)
+            clip_r_st, clip_r_en = tmp_end - align_res.ref_end, tmp_end - align_res.ref_begin
+
+        clip_base = hit.q_st + len(circ) - hit.q_en - (align_res.query_end - align_res.query_begin) + 1
         circ_start = min(hit.r_st, clip_r_st) - 1
         circ_end = max(hit.r_en, clip_r_en)
     else:
@@ -789,8 +827,7 @@ def repetitive_hit(seq):
         hit.q_st, hit.q_en
 
 
-def scan_raw_chunk(chunk_id, chunk, is_canonical, circ_reads):
-    LOGGER.debug('{}_started'.format(chunk_id))
+def scan_raw_chunk(chunk, is_canonical, circ_reads):
     reads_cnt = defaultdict(int)
 
     ret = []
@@ -837,13 +874,7 @@ def scan_raw_chunk(chunk_id, chunk, is_canonical, circ_reads):
         if circ_hit is None:
             continue
 
-        try:
-            circ_start, circ_end, clip_info = align_clip_segments(circ, circ_hit)
-        except KeyboardInterrupt:
-            print(len(circ))
-            print(circ_hit)
-            continue
-
+        circ_start, circ_end, clip_info = align_clip_segments_2(circ, circ_hit)
         if circ_start is None or circ_end is None:
             continue
 
@@ -906,7 +937,6 @@ def scan_raw_chunk(chunk_id, chunk, is_canonical, circ_reads):
         else:
             reads_cnt['wrong'] += 1
 
-    LOGGER.debug('{}_end'.format(chunk_id))
     return reads_cnt, ret
 
 
@@ -945,12 +975,11 @@ def scan_raw_reads(in_file, ref_fasta, ss_index, is_canonical, out_dir, prefix, 
     aligner = mp.Aligner(ref_fasta, n_threads=threads, preset='splice')
 
     jobs = []
-    pool = Pool(6, initializer, (aligner, aligner, ss_index, contig_len))
+    pool = Pool(threads, initializer, (aligner, aligner, ss_index, contig_len))
 
     # Init jobs
     chunk = []
     chunk_size = 1000
-    chunk_id = 0
     for line in fq:
         if is_gz:
             header = to_str(line).rstrip().split(' ')[0]
@@ -969,21 +998,18 @@ def scan_raw_reads(in_file, ref_fasta, ss_index, is_canonical, out_dir, prefix, 
         # Split into chunks
         chunk.append((header, seq))
         if len(chunk) == chunk_size:
-            if chunk_id == 133:
-                jobs.append(pool.apply_async(scan_raw_chunk, (chunk_id, chunk, is_canonical, circ_reads)))
-            chunk_id += 1
+            jobs.append(pool.apply_async(scan_raw_chunk, (chunk, is_canonical, circ_reads)))
             chunk = []
 
     if len(chunk) > 0:
-        if chunk_id == 133:
-            jobs.append(pool.apply_async(scan_raw_chunk, (chunk_id, chunk, is_canonical, circ_reads)))
+        jobs.append(pool.apply_async(scan_raw_chunk, (chunk, is_canonical, circ_reads)))
     pool.close()
 
     # Receive results
     reads_cnt = defaultdict(int)
 
     prog = ProgressBar()
-    # prog.update(0)
+    prog.update(0)
     finished_job = 0
     with open('{}/{}.low_confidence.fa'.format(out_dir, prefix), 'w') as out:
         for job in jobs:
@@ -997,9 +1023,9 @@ def scan_raw_reads(in_file, ref_fasta, ss_index, is_canonical, out_dir, prefix, 
                 ))
             finished_job += 1
 
-            # prog.update(100 * finished_job // len(jobs))
+            prog.update(100 * finished_job // len(jobs))
 
-    # prog.update(100)
+    prog.update(100)
     pool.join()
 
     print(reads_cnt)
