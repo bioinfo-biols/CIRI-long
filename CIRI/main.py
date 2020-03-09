@@ -11,6 +11,7 @@ def main():
     from CIRI.version import __version__
     from CIRI.rofinder import find_ccs_reads, load_ccs_reads
     from CIRI.alignment import index_annotation, scan_ccs_reads, recover_ccs_reads
+    from CIRI.alignment import scan_raw_reads
     from CIRI.utils import check_file, check_dir
     from CIRI.logger import get_logger
 
@@ -58,7 +59,7 @@ def main():
 
     # Scan for repeats and CCS
     reads_count = defaultdict(int)
-    if not debugging and os.path.exists('{}/tmp/{}.ccs.fa'.format(out_dir, prefix)) and os.path.exists('{}/tmp/{}.raw.fa'.format(out_dir, prefix)):
+    if os.path.exists('{}/tmp/{}.ccs.fa'.format(out_dir, prefix)) and os.path.exists('{}/tmp/{}.raw.fa'.format(out_dir, prefix)):
         logger.info('Step 1 - Loading circRNA candidates in previous run')
         ccs_seq = load_ccs_reads(out_dir, prefix)
         reads_count['consensus'] = len(ccs_seq)
@@ -87,6 +88,10 @@ def main():
             with open(idx_file, 'wb') as idx:
                 pickle.dump([gtf_idx, ss_idx], idx)
 
+    # Find BSJs
+    logger.info('Step 1.5 - Find BSJs')
+    scan_raw_reads(in_file, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
+
     # Find circRNAs
     logger.info('Step 2 - First scanning')
     tmp_cnt, short_seq = scan_ccs_reads(ccs_seq, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
@@ -101,7 +106,6 @@ def main():
 
     logger.info('Raw unmapped: {}'.format(reads_count['raw_unmapped']))
     logger.info('CCS mapped: {}'.format(reads_count['ccs_mapped']))
-    # logger.info('CCS & Raw aligned concordantly: {}'.format(reads_count['accordance']))
     logger.info('BSJ: {}'.format(reads_count['bsj']))
     logger.info('Splice signal: {}'.format(reads_count['signal']))
 

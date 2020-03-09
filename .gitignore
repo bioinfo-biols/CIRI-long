@@ -108,3 +108,6 @@ test_data/
 
 # Pycharm
 .idea
+
+# OSX
+.DS_Store

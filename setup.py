@@ -6,7 +6,7 @@ import sys
 sys.path.append('CIRI')
 
 import codecs
-import pathlib
+import numpy
 
 from setuptools import setup, Extension, find_packages
 from setuptools.command.build_ext import build_ext
@@ -30,6 +30,16 @@ extensions = [
         library_dirs=['vendor/spoa/build/lib'],
         extra_compile_args=['-std=c++11'],
     ),
+    Extension(
+        "ssw",
+        sources=["lib/striped_smith_waterman/ssw_wrap.py"],
+        include_dirs=['lib/striped_smith_waterman'],
+        libraries=['ssw'],
+        language="c++",
+        # extra_objects=['vendor/spoa/build/lib/libspoa.a'],
+        library_dirs=['lib/striped_smith_waterman'],
+        extra_compile_args=['-std=c++11'],
+    ),
 ]
 
 setup(
@@ -51,13 +61,13 @@ setup(
         ]
     },
     ext_modules=cythonize(extensions,
-                          build_dir="CIRI"),
+                          build_dir="./"),
     include_package_data=True,
     zip_safe=False,
     install_requires=[
-        'argparse==1.2.1', 'Cython==0.29.13', 'mappy==2.17', 'numpy==1.17.0', 'pandas==0.25.0',
-        'pysam==0.15.3', 'python-Levenshtein==0.12.0', 'scikit-bio==0.5.5',
-        'scikit-learn==0.21.3', 'scipy==1.3.1',
+        'argparse>=1.2.1', 'Cython>=0.29.13', 'mappy>=2.17', 'numpy>=1.17.0', 'pandas>=0.25.0',
+        'pysam>=0.15.3', 'python-Levenshtein>=0.12.0', 'scikit-bio>=0.5.5',
+        'scikit-learn>=0.21.3', 'scipy>=1.3.1',
     ],
     test_suite="nose.collector",
     tests_require=['nose==1.3.7'],

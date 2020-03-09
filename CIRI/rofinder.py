@@ -297,11 +297,7 @@ def find_consensus(header, seq):
 
 def worker(chunk):
     ret = []
-    # is_aval = 0
-    # is_found = 0
     for header, seq in chunk:
-        # if header not in ['ENSMUST00000193941|ENSMUSG00000102543|18:37825021-37825079|+|59_6_aligned_43846_F_18_510_30', ]:
-        #     continue
         segments, ccs, is_circular = find_consensus(header, seq)
         if segments is None or ccs is None or is_circular == 0:
             continue
@@ -332,7 +328,6 @@ def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
     else:
         sys.exit('Wrong format of input')
 
-    total_cnt = 0
     chunk = []
     chunk_size = 250
     chunk_cnt = 0
@@ -351,20 +346,18 @@ def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
         else:
             header = header.lstrip('>')
 
-        total_cnt += 1
         # Split into chunks
         chunk.append((header, seq))
         if len(chunk) == chunk_size:
             jobs.append(pool.apply_async(worker, (chunk, )))
-            # worker(chunk, out_dir, debugging)
             chunk = []
             chunk_cnt += 1
 
     if len(chunk) > 0:
         jobs.append(pool.apply_async(worker, (chunk, )))
         chunk_cnt += 1
-        # worker(chunk, out_dir, debugging)
     pool.close()
+    fq.close()
 
     prog = ProgressBar()
     prog.update(0)

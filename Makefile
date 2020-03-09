@@ -20,6 +20,7 @@ lib:
 	mkdir -p vendor/spoa/build
 	cd vendor/spoa/build && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON .. && make
 	cd vendor/bwapy && make bwa/libbwa.a && python setup.py install
+	cd lib/ssw && gcc -Wall -O3 -pipe -fPIC -shared -rdynamic -o libssw.so ssw.c ssw.h
 
 prepare:
 	cat requirements.txt | xargs -n 1 pip3 install

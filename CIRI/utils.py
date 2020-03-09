@@ -2,6 +2,32 @@ import os
 import sys
 import re
 import itertools
+import threading
+import _thread as thread
+
+
+def quit_function(fn_name):
+    sys.stderr.write('{0} took too long\n'.format(fn_name))
+    sys.stderr.flush()
+    thread.interrupt_main()
+
+
+def exit_after(s):
+    """
+    use as decorator to exit process if
+    function takes longer than s seconds
+    """
+    def outer(fn):
+        def inner(*args, **kwargs):
+            timer = threading.Timer(s, quit_function, args=[fn.__name__])
+            timer.start()
+            try:
+                result = fn(*args, **kwargs)
+            finally:
+                timer.cancel()
+            return result
+        return inner
+    return outer
 
 
 def check_file(file_name):
