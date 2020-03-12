@@ -27,7 +27,7 @@ def main():
     parser.add_argument('-a', '--anno', dest='gtf', metavar='GTF', default=None,
                         help='Genome reference gtf', )
     parser.add_argument('--canonical', dest='canonical', default=False, action='store_true',
-                        help='Use canonical splice signal (GT/AG) only, default: False')
+                        help='Use canonical splice signal (GT/AG) only, default: True')
     parser.add_argument('-t', '--threads', dest='threads', metavar='INT', default=os.cpu_count(),
                         help='Number of threads', )
     parser.add_argument('--debug', dest='debug', default=False, action='store_true',

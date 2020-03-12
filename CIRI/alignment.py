@@ -603,7 +603,8 @@ def scan_ccs_chunk(chunk, is_canonical):
             if not is_canonical:
                 ret.append((
                     read_id, '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end),
-                    'NA', 'NA', 'NA', '{}-{}'.format(clip_base, len(ccs)), segments, circ
+                    'NA', 'NA', 'NA', '{}-{}'.format(clip_base, len(ccs)), segments,
+                    circ if circ_hit.strand > 0 else revcomp(circ)
                 ))
             continue
 
@@ -613,8 +614,8 @@ def scan_ccs_chunk(chunk, is_canonical):
 
         # if is_canonical: keep canonical splice site only
         ss = ss_id.split('|')[0]
-        if is_canonical and ss[-1] == '*' and ss != 'AG-GT*':
-            continue
+        # if is_canonical and ss[-1] == '*' and ss != 'AG-GT*':
+        #     continue
 
         circ_id = '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end)
 
@@ -727,7 +728,8 @@ def recover_ccs_chunk(chunk, is_canonical):
             if not is_canonical:
                 ret.append((
                     read_id, '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end),
-                    'NA', 'NA', 'NA', '{}-{}'.format(clip_base, len(ccs)), segments, circ
+                    'NA', 'NA', 'NA', '{}-{}'.format(clip_base, len(ccs)), segments,
+                    circ if circ_hit.strand > 0 else revcomp(circ)
                 ))
             continue
 
@@ -737,8 +739,8 @@ def recover_ccs_chunk(chunk, is_canonical):
 
         # if is_canonical: keep canonical splice site only
         ss = ss_id.split('|')[0]
-        if is_canonical and ss[-1] == '*' and ss != 'AG-GT*':
-            continue
+        # if is_canonical and ss[-1] == '*' and ss != 'AG-GT*':
+        #     continue
 
         circ_id = '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end)
 
@@ -906,6 +908,11 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
         # Retrive circRNA positions, convert minimap2 position to real position
         ss_site, us_free, ds_free = search_splice_signal(circ_ctg, circ_start, circ_end, clip_base)
         if ss_site is None:
+            if not is_canonical:
+                ret.append((
+                    read_id, '{}:{}-{}'.format(circ_ctg, circ_start + 1, circ_end),
+                    'NA', 'NA', 'NA', '{}-NA'.format(clip_base), 'partial', circ if circ_strand > 0 else revcomp(circ)
+                ))
             continue
 
         ss_id, strand, us_shift, ds_shift = ss_site
@@ -914,8 +921,8 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
 
         # if is_canonical: keep canonical splice site only
         ss = ss_id.split('|')[0]
-        if ss_site is None or (is_canonical and ss[-1] == '*'):
-            continue
+        # if ss_site is None or (is_canonical and ss[-1] == '*' and ss != 'AG-GT*'):
+        #     continue
 
         circ_id = '{}:{}-{}'.format(circ_ctg, circ_start + 1, circ_end)
         cir_exons[0][0] = circ_start
