@@ -1,0 +1,2 @@
+include libs/striped_smith_waterman/libssw.so
+include libs/*

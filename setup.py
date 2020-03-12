@@ -6,7 +6,7 @@ import sys
 sys.path.append('CIRI')
 
 import codecs
-import numpy
+
 
 from setuptools import setup, Extension, find_packages
 from setuptools.command.build_ext import build_ext
@@ -20,22 +20,13 @@ def read(infile):
 
 extensions = [
     Extension(
-        "poa",
+        "CIRI/poa",
         sources=["CIRI/poa.pyx"],
         depends=["CIRI/cpoa.h", "CIRI/cpoa.pxd"],
         include_dirs=['./CIRI', 'vendor/spoa/include'],
         libraries=['spoa'],
         language="c++",
         library_dirs=['vendor/spoa/build/lib'],
-        extra_compile_args=['-std=c++11'],
-    ),
-    Extension(
-        "ssw",
-        sources=["libs/striped_smith_waterman/ssw_wrap.py"],
-        include_dirs=['libs/striped_smith_waterman'],
-        libraries=['ssw'],
-        language="c++",
-        library_dirs=['libs/striped_smith_waterman'],
         extra_compile_args=['-std=c++11'],
     ),
 ]
@@ -46,6 +37,7 @@ setup(
     url='https://github.com/Kevinzjy/CIRI-long',
     description='circular RNA identification from Nanopore',
     long_description=read('README.md'),
+    long_description_content_type='text/markdown',
     author='Jinyang Zhang',
     author_email='zhangjinyang@biols.ac.cn',
     maintainer='Jinyang Zhang',
