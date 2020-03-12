@@ -23,15 +23,15 @@ def main():
     parser.add_argument('-r', '--ref', dest='reference', metavar='REF', default=None,
                         help='Reference genome FASTA file', )
     parser.add_argument('-p', '--prefix', dest='prefix', metavar='PREFIX', default="CIRI-long",
-                        help='Output sample prefix, default: CIRI-long', )
+                        help='Output sample prefix, (default: %(default)s)', )
     parser.add_argument('-a', '--anno', dest='gtf', metavar='GTF', default=None,
                         help='Genome reference gtf', )
-    parser.add_argument('--canonical', dest='canonical', default=False, action='store_true',
-                        help='Use canonical splice signal (GT/AG) only, default: True')
+    parser.add_argument('--canonical', dest='canonical', default=True, action='store_true',
+                        help='Use canonical splice signal (GT/AG) only, default: %(default)s)')
     parser.add_argument('-t', '--threads', dest='threads', metavar='INT', default=os.cpu_count(),
                         help='Number of threads', )
     parser.add_argument('--debug', dest='debug', default=False, action='store_true',
-                        help='Run in debuggin mode', )
+                        help='Run in debuggin mode, (default: %(default)s)', )
     parser.add_argument('-v', '--version', action='version',
                         version='%(prog)s {version}'.format(version=__version__))
     args = parser.parse_args()
