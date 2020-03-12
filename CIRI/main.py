@@ -88,26 +88,34 @@ def main():
             with open(idx_file, 'wb') as idx:
                 pickle.dump([gtf_idx, ss_idx], idx)
 
-    # Find BSJs
-    logger.info('Step 1.5 - Find BSJs')
-    scan_raw_reads(in_file, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
-
     # Find circRNAs
-    logger.info('Step 2 - First scanning')
-    tmp_cnt, short_seq = scan_ccs_reads(ccs_seq, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
-    for key, value in tmp_cnt.items():
-        reads_count[key] += value
+    logger.info('Step 2.1 - Find circRNAs from CCS reads')
+    # tmp_cnt, short_seq = scan_ccs_reads(ccs_seq, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
+    # for key, value in tmp_cnt.items():
+    #     reads_count[key] += value
+    #
+    # # Recover short reads
+    # logger.info('Step 2.2 - Recover short CCS reads')
+    # tmp_cnt = recover_ccs_reads(short_seq, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
+    # for key, value in tmp_cnt.items():
+    #     reads_count[key] += value
 
-    # Recover short reads
-    logger.info('Step 3 - Second scanning')
-    tmp_cnt = recover_ccs_reads(short_seq, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
+    # Find BSJs
+    logger.info('Step 3 - Find circRNAs with partial structure')
+    tmp_cnt, short_seq = scan_raw_reads(in_file, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
     for key, value in tmp_cnt.items():
         reads_count[key] += value
+    logger.info('Partial reads: {}'.format(reads_count['partial']))
+    sys.exit(1)
+
+    # logger.info('Step 3.2 - Second scanning for BSJs')
+    # tmp_cnt = recover_raw_reads(short_seq, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
 
     logger.info('Raw unmapped: {}'.format(reads_count['raw_unmapped']))
     logger.info('CCS mapped: {}'.format(reads_count['ccs_mapped']))
     logger.info('BSJ: {}'.format(reads_count['bsj']))
     logger.info('Splice signal: {}'.format(reads_count['signal']))
+    logger.info('Partial reads: {}'.format(reads_count['partial']))
 
     with open('{}/{}.json'.format(out_dir, prefix), 'w') as f:
         json.dump(reads_count, f)

@@ -167,7 +167,7 @@ def split_sequence(primary_chain, seq, p_match, p_indel):
     idx = 0
 
     hits = {hit[0]: hit for hit in primary_chain}
-    hit_pos =  [hit[0] for hit in primary_chain]
+    hit_pos = [hit[0] for hit in primary_chain]
 
     last_x = e
     while last_x < final:

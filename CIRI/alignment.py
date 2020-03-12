@@ -212,6 +212,47 @@ def get_blocks(hit):
     return r_block
 
 
+def get_partial_blocks(hit, boundary):
+    r_start, r_end = hit.r_st, hit.r_st
+    r_block = []
+    q_idx = hit.q_st
+    last_q = 0
+
+    for length, operation in hit.cigar:
+        if operation == 0:
+            r_end += length
+            last_q = q_idx
+            q_idx += length
+        elif operation == 1:
+            last_q = q_idx
+            q_idx += length
+        elif operation == 2:
+            r_end += length
+        elif operation == 3:
+            if r_start == '*':
+                r_block.append(['*', r_end, 'NA'])
+            else:
+                r_block.append([r_start, r_end, r_end - r_start + 1])
+            r_start = r_end + length
+            r_end = r_start
+        elif operation == 4:
+            pass
+
+        if last_q <= boundary <= q_idx:
+            r_block.append([r_start, '*', 'NA'])
+            r_start = '*'
+            last_q = boundary + 1
+
+    if r_start == '*':
+        r_block.append(['*', r_end, 'NA'])
+    elif r_end > r_start:
+        r_block.append([r_start, r_end, r_end - r_start + 1])
+    else:
+        pass
+
+    return r_block
+
+
 def merge_exons(exons, clip_info):
     clip_st, clip_en, clip_base = clip_info
     exon_st, exon_en = exons[0][0], exons[-1][1]
@@ -230,6 +271,7 @@ def merge_exons(exons, clip_info):
 
     return exons
 
+
 SPLICE_SIGNAL = {
     ('GT', 'AG'): 0, # U2-type
     ('GC', 'AG'): 1, # U2-type
@@ -242,6 +284,13 @@ SPLICE_SIGNAL = {
     # ('GT', 'AT'): 4, # non-canonical
     # ('GT', 'AA'): 4, # non-canonical
 }
+
+
+def ss_altered_length(i, j, us_free, ds_free, clip_base):
+    clip_altered = min(abs(j - i - clip_base), abs(j - i + clip_base))
+    us_altered = min(abs(i + us_free), abs(i - ds_free))
+    ds_altered = min(abs(j + us_free), abs(j - ds_free))
+    return abs(i-j), clip_altered, us_altered + ds_altered
 
 
 def search_splice_signal(contig, start, end, clip_base, search_length=10, shift_threshold=3):
@@ -291,10 +340,9 @@ def search_splice_signal(contig, start, end, clip_base, search_length=10, shift_
                         us_ss, ds_ss = revcomp(ds_ss), revcomp(us_ss)
                     ss_id = '{}-{}|{}-{}'.format(us_ss, ds_ss, i, j)
                     ss_weight = SPLICE_SIGNAL[(ds_ss, us_ss)] if (ds_ss, us_ss) in SPLICE_SIGNAL else 3
+
                     anno_ss.append((
-                        ss_id, strand, i, j, ss_weight,
-                        abs(i - j),
-                        min(abs(i - ds_free), abs(i - us_free)) + min(abs(j - ds_free), abs(j - us_free)),
+                        ss_id, strand, i, j, ss_weight, *ss_altered_length(i, j, us_free, ds_free, clip_base)
                     ))
 
         if len(anno_ss) > 0:
@@ -314,7 +362,6 @@ def search_splice_signal(contig, start, end, clip_base, search_length=10, shift_
     putative_ss = []
     for strand in ['+', '-']:
         for (ds_ss, us_ss), ss_weight in SPLICE_SIGNAL.items():
-            ss_id = '{}-{}*'.format(us_ss, ds_ss)
             if strand == '-':
                 ds_ss, us_ss = revcomp(us_ss), revcomp(ds_ss)
 
@@ -348,11 +395,10 @@ def search_splice_signal(contig, start, end, clip_base, search_length=10, shift_
                         continue
                     us_shift = i - us_search_length
                     ds_shift = j - us_search_length
+                    ss_id = '{}-{}*|{}-{}'.format(us_ss, ds_ss, us_shift, ds_shift)
                     putative_ss.append((
-                        '{}|{}-{}'.format(ss_id, us_shift, ds_shift), strand, us_shift, ds_shift,
-                        ss_weight,
-                        abs(i - j),
-                        min(abs(us_shift - ds_free), abs(us_shift - us_free)) + min(abs(ds_shift - ds_free), abs(ds_shift - us_free)),
+                        ss_id, strand, us_shift, ds_shift, ss_weight,
+                        *ss_altered_length(us_shift, ds_shift, us_free, ds_free, clip_base)
                     ))
 
     if len(putative_ss) > 0:
@@ -362,24 +408,33 @@ def search_splice_signal(contig, start, end, clip_base, search_length=10, shift_
 
 
 def sort_splice_sites(sites, us, ds, clip_base):
-    # Splice site: site_id, strand, us_shift, ds_shift, site_weight, altered_len, altered_total
+    # Splice site: site_id, strand, us_shift, ds_shift, site_weight, altered_len, clip_altered, altered_total
     from operator import itemgetter
     get_ss = itemgetter(0, 1, 2, 3)
 
+    tmp_sites = set(sites)
+
+    # Clipped sites
+    clipped_sites = [i for i in tmp_sites if (-clip_base <= i[2] - i[3] <= clip_base)]
+    if len(clipped_sites) > 0:
+        return get_ss(sorted(clipped_sites, key=itemgetter(6, 5, 4, 7))[0])
+    tmp_sites = set(sites) - set(clipped_sites)
+
     # Confidential splice sites
-    confident_sites = [i for i in sites if -us <= i[2] <= ds and -us <= i[3] <= ds]
+    confident_sites = [i for i in tmp_sites if -us <= i[2] <= ds and -us <= i[3] <= ds]
     if len(confident_sites) > 0:
-        return get_ss(sorted(confident_sites, key=itemgetter(5, 4, 6))[0])
+        return get_ss(sorted(confident_sites, key=itemgetter(5, 4, 6, 7))[0])
+    tmp_sites = tmp_sites - set(confident_sites)
 
     # Ambiguous splice sites
-    ambiguous_sites = [i for i in set(sites) - set(confident_sites) if -clip_base <= i[2] <= 0 <= i[3] <= clip_base]
+    ambiguous_sites = [i for i in tmp_sites if -clip_base <= i[2] <= 0 <= i[3] <= clip_base]
     if len(ambiguous_sites) > 0:
-        return get_ss(sorted(ambiguous_sites, key=itemgetter(4, 5, 6))[0])
+        return get_ss(sorted(ambiguous_sites, key=itemgetter(4, 5, 6, 7))[0])
+    tmp_sites = tmp_sites - set(ambiguous_sites)
 
     # Other sites
-    normal_sites = set(sites) - set(confident_sites) - set(ambiguous_sites)
-    if len(normal_sites) > 0:
-        return get_ss(sorted(normal_sites, key=itemgetter(4, 5, 6))[0])
+    if len(tmp_sites) > 0:
+        return get_ss(sorted(tmp_sites, key=itemgetter(4, 5, 6, 7))[0])
     return None
 
 
@@ -408,13 +463,10 @@ def find_bsj(ccs):
     last_junc = 0
     last_m = 0
 
-    last_junc = 0
-    last_m = 0
-
     itered_junc = {}
     while True:
         circ_hit = get_primary_alignment(ALIGNER.map(circ))
-        if circ_hit is None or circ_hit.mlen < last_m:
+        if circ_hit is None or circ_hit.mlen <= last_m:
             circ_junc = last_junc
             break
         last_m = circ_hit.mlen
@@ -430,60 +482,17 @@ def find_bsj(ccs):
             circ_junc = (circ_junc - en_clip) % len(circ)
 
         if circ_junc in itered_junc:
+            circ_junc = last_junc
             break
 
         circ = ccs[circ_junc:] + ccs[:circ_junc]
         itered_junc[circ_junc] = 1
+
+    circ = ccs[circ_junc:] + ccs[:circ_junc]
     return circ, circ_junc
 
 
-# @exit_after(10)
 def align_clip_segments(circ, hit):
-    """
-    Align clip bases
-    """
-    from skbio import DNA, local_pairwise_align_ssw
-    from collections import Counter
-    st_clip, en_clip = hit.q_st, len(circ) - hit.q_en
-    clip_r_st, clip_r_en = None, None
-
-    if st_clip + en_clip >= 20:
-        clip_seq = circ[hit.q_en:] + circ[:hit.q_st]
-        if len(clip_seq) > 0.6 * len(circ):
-            return None, None, None
-
-        tmp_start = max(hit.r_st - 200000, 0)
-        tmp_end = min(hit.r_en + 200000, CONTIG_LEN[hit.ctg])
-
-        tmp_seq = FAIDX.seq(hit.ctg, tmp_start, tmp_end)
-        if Counter(tmp_seq)['N'] >= 0.3 * (tmp_end - tmp_start):
-            return None, None, None
-
-        if hit.strand > 0:
-            tmp_alignment, tmp_score, tmp_interval = local_pairwise_align_ssw(
-                DNA(clip_seq), DNA(tmp_seq),
-                gap_open_penalty=1, gap_extend_penalty=1, match_score=1, mismatch_score=-1
-            )
-            clip_r_st, clip_r_en = tmp_start + tmp_interval[1][0], tmp_start + tmp_interval[1][1]
-        else:
-            tmp_alignment, tmp_score, tmp_interval = local_pairwise_align_ssw(
-                DNA(clip_seq), DNA(revcomp(tmp_seq)),
-                gap_open_penalty=1, gap_extend_penalty=1, match_score=1, mismatch_score=-1
-            )
-            clip_r_st, clip_r_en = tmp_end - tmp_interval[1][1], tmp_end - tmp_interval[1][0]
-
-        clip_base = hit.q_st + len(circ) - hit.q_en - (tmp_interval[1][1] - tmp_interval[1][0]) + 1
-        circ_start = min(hit.r_st, clip_r_st) - 1
-        circ_end = max(hit.r_en, clip_r_en)
-    else:
-        circ_start = hit.r_st - 1
-        circ_end = hit.r_en
-        clip_base = st_clip + en_clip
-
-    return circ_start, circ_end, (clip_r_st, clip_r_en, clip_base)
-
-
-def align_clip_segments_2(circ, hit):
     """
     Align clip bases
     """
@@ -588,7 +597,7 @@ def scan_ccs_chunk(chunk, is_canonical):
         reads_cnt['bsj'] += 1
 
         # Retrive circRNA positions, convert minimap2 position to real position
-        ss_site, us_free, ds_free = search_splice_signal(circ_hit.ctg, circ_start, circ_end, clip_base)
+        ss_site, us_free, ds_free = search_splice_signal(circ_hit.ctg, circ_start, circ_end, clip_base, clip_base + 10)
         if ss_site is None:
             # Keep reads that seemed to generate from circRNAs, but cannot get splice signal
             if not is_canonical:
@@ -621,12 +630,9 @@ def scan_ccs_chunk(chunk, is_canonical):
             cir_exon_tag.append('{}-{}'.format(cir_exon_start + 1, cir_exon_end))
 
         # BSJ correction for 5' prime region
-        if strand == '+':
-            correction_shift = min(max(us_shift, us_free), ds_free)
-            circ_seq = circ[correction_shift:] + circ[:correction_shift]
-        else:
-            correction_shift = min(max(ds_shift, us_free), ds_free)
-            circ_seq = revcomp(circ[correction_shift:] + circ[:correction_shift])
+        correction_shift = min(max(us_shift, us_free), ds_free)
+        circ_seq = circ if circ_hit.strand > 0 else revcomp(circ)
+        circ_seq = circ_seq[correction_shift:] + circ_seq[:correction_shift]
 
         ret.append((
             read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-{}'.format(clip_base, len(circ)), segments, circ_seq
@@ -647,12 +653,10 @@ def scan_ccs_reads(ccs_seq, ref_fasta, ss_index, is_canonical, out_dir, prefix, 
     minimap_aligner = mp.Aligner(ref_fasta, n_threads=threads, preset='splice')
 
     chunk_size = 250
-    chunk_cnt = 0
     jobs = []
     pool = Pool(threads, initializer, (minimap_aligner, minimap_aligner, ss_index, contig_len))
     for reads in grouper(list(ccs_seq), chunk_size):
         chunk = [[i, ] + ccs_seq[i] for i in reads if i is not None]
-        chunk_cnt += 1
         jobs.append(pool.apply_async(scan_ccs_chunk, (chunk, is_canonical)))
     pool.close()
 
@@ -675,7 +679,7 @@ def scan_ccs_reads(ccs_seq, ref_fasta, ss_index, is_canonical, out_dir, prefix, 
                 out.write('>{}\t{}\t{}\t{}\t{}\t{}\t{}\n{}\n'.format(
                     read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, segments, circ_seq
                 ))
-            prog.update(100 * finished_cnt / chunk_cnt)
+            prog.update(100 * finished_cnt / len(jobs))
 
     pool.join()
     prog.update(100)
@@ -717,7 +721,7 @@ def recover_ccs_chunk(chunk, is_canonical):
         reads_cnt['bsj'] += 1
 
         # Retrive circRNA positions, convert minimap2 position to real position
-        ss_site, us_free, ds_free = search_splice_signal(circ_hit.ctg, circ_start, circ_end, clip_base)
+        ss_site, us_free, ds_free = search_splice_signal(circ_hit.ctg, circ_start, circ_end, clip_base, clip_base + 10)
         if ss_site is None:
             # Keep reads that seemed to generate from circRNAs, but cannot get splice signal
             if not is_canonical:
@@ -750,12 +754,9 @@ def recover_ccs_chunk(chunk, is_canonical):
             cir_exon_tag.append('{}-{}'.format(cir_exon_start + 1, cir_exon_end))
 
         # BSJ correction for 5' prime region
-        if strand == '+':
-            correction_shift = min(max(us_shift, us_free), ds_free)
-            circ_seq = circ[correction_shift:] + circ[:correction_shift]
-        else:
-            correction_shift = min(max(ds_shift, us_free), ds_free)
-            circ_seq = revcomp(circ[correction_shift:] + circ[:correction_shift])
+        correction_shift = min(max(us_shift, us_free), ds_free)
+        circ_seq = circ if circ_hit.strand > 0 else revcomp(circ)
+        circ_seq = circ_seq[correction_shift:] + circ_seq[:correction_shift]
 
         ret.append((
             read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-{}'.format(clip_base, len(circ)), segments, circ_seq
@@ -776,16 +777,15 @@ def recover_ccs_reads(short_reads, ref_fasta, ss_index, is_canonical, out_dir, p
     bwa_aligner = Aligner(BwaAligner(ref_fasta, options=options))
 
     chunk_size = 250
-    chunk_cnt = 0
     jobs = []
     pool = Pool(1, initializer, (bwa_aligner, faidx, ss_index, contig_len))
     for reads in grouper(short_reads, chunk_size):
         chunk = [i for i in reads if i is not None]
         jobs.append(pool.apply_async(recover_ccs_chunk, (chunk, is_canonical)))
-        chunk_cnt += 1
     pool.close()
 
     prog = ProgressBar()
+    prog.update(0)
     finished_cnt = 0
 
     reads_count = defaultdict(int)
@@ -801,7 +801,7 @@ def recover_ccs_reads(short_reads, ref_fasta, ss_index, is_canonical, out_dir, p
                 out.write('>{}\t{}\t{}\t{}\t{}\t{}\t{}\n{}\n'.format(
                     read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, segments, circ_seq
                 ))
-            prog.update(100 * finished_cnt / chunk_cnt)
+            prog.update(100 * finished_cnt / len(jobs))
 
     pool.join()
     prog.update(100)
@@ -819,14 +819,6 @@ def check_read(segments, seq):
                      debug=1)
 
 
-def repetitive_hit(seq):
-    hits = ALIGNER.map(seq)
-    if hits is None:
-        return None
-    for hit in hits:
-        hit.q_st, hit.q_en
-
-
 def scan_raw_chunk(chunk, is_canonical, circ_reads):
     reads_cnt = defaultdict(int)
 
@@ -836,65 +828,84 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
     for read_id, seq in chunk:
         if read_id in circ_reads:
             continue
-        tscp_id, gene_id, ans_id, strand, read_info = read_id.split('|')
-        ans_contig, ans_pos = ans_id.split(':')
-        ans_start, ans_end = ans_pos.split('-')
-        ans_len, pos, is_aligned, seq_index, direction, head, middle, tail = read_info.split('_')
-
-        # if is_aligned == 'unaligned':
-        #     continue
-        #
-        # # Do not have junction
-        # if int(ans_len) - int(pos) % int(ans_len) > int(middle) - 20:
-        #     continue
-        #
-        # # False negative full length reads
-        # if len(seq) > int(ans_len) or int(head) > 100 or int(tail) > 100:
-        #     continue
 
         # API for short reads
-        if len(seq) < 200:
+        if len(seq) < 300:
+            short_reads.append((read_id, seq))
             continue
 
-        reads_cnt['total'] += 1
+        # Remove reads that have ambiguous mapping
+        raw_hits = sorted([i for i in ALIGNER.map(seq) if i.is_primary], key=lambda x: [x.q_st, x.q_en])
+        if len(raw_hits) == 0:
+            continue
+        elif len(raw_hits) == 1:
+            raw_hit = raw_hits[0]
+            if raw_hit.q_en - raw_hit.q_st < len(seq) * .45:
+                continue
+            if raw_hit.q_en - raw_hit.q_st > len(seq) - 50:
+                continue
+            if raw_hit.q_st < 50 and raw_hit.q_en > len(seq) - 50:
+                continue
+            circ, junc = find_bsj(seq)
+            if junc is None:
+                continue
 
-        raw_hit = get_primary_alignment(ALIGNER.map(seq))
-        if raw_hit is None:
-            continue
-        if raw_hit.q_en - raw_hit.q_st < len(seq) * .4:
-            continue
-        if raw_hit.q_en - raw_hit.q_st > len(seq) - 50:
-            continue
-
-        circ, junc = find_bsj(seq)
-        if junc is None or min(junc, len(seq) - junc) < 50:
-            continue
-
-        circ_hit = get_primary_alignment(ALIGNER.map(circ))
-        if circ_hit is None:
-            continue
-
-        circ_start, circ_end, clip_info = align_clip_segments_2(circ, circ_hit)
-        if circ_start is None or circ_end is None:
+        elif len(raw_hits) == 2:
+            head, tail = raw_hits[0], raw_hits[1]
+            if head.ctg != tail.ctg:
+                continue
+            if not head.q_st + (head.q_en - head.q_st) * 0.5 < tail.q_st:
+                continue
+            if head.r_en - 20 < tail.r_st:
+                continue
+            if head.q_en < tail.q_st - 50:
+                continue
+            circ, junc = find_bsj(seq)
+            if junc is None or junc < head.q_en - 10 or junc > tail.q_st + 10:
+                continue
+        else:
             continue
 
-        clip_base = clip_info[2]
-        if clip_base > 0.05 * len(circ):
+        circ_hits = sorted([i for i in ALIGNER.map(circ) if i.is_primary], key=lambda x: [x.q_st, x.q_en])
+        if len(circ_hits) == 0:
+            continue
+        elif len(circ_hits) == 1:
+            circ_hit = circ_hits[0]
+            if circ_hit.mlen <= max([i.mlen for i in raw_hits]):
+                continue
+            if min(junc, len(seq) - junc) < 30:
+                continue
+            if not junc + circ_hit.q_st < len(seq) < junc + circ_hit.q_en:
+                continue
+            circ_ctg, circ_start, circ_end, circ_strand = circ_hit.ctg, circ_hit.r_st, circ_hit.r_en, circ_hit.strand
+            clip_base = circ_hit.q_st + len(seq) - circ_hit.q_en
+            cir_exons = get_partial_blocks(circ_hit, len(seq) - junc)
+        elif len(circ_hits) == 2:
+            head, tail = circ_hits[0], circ_hits[1]
+            if head.ctg != tail.ctg or head.strand != tail.strand:
+                continue
+            if not head.q_st + (head.q_en - head.q_st) * 0.5 < tail.q_st:
+                continue
+            if head.r_en - 20 < tail.r_st:
+                continue
+            if head.q_en < tail.q_st - 50:
+                continue
+            circ_ctg, circ_start, circ_end, circ_strand = head.ctg, tail.r_st, head.r_en, head.strand
+            clip_base = abs(tail.q_st - head.q_en)
+
+            head_exons = get_blocks(head)
+            head_exons[0] = ['*', head_exons[0][1], 'NA']
+            tail_exons = get_blocks(tail)
+            tail_exons[-1] = [tail_exons[-1][0], '*', 'NA']
+            cir_exons = tail_exons + head_exons
+
+            circ = circ[tail.q_st:] + circ[:tail.q_st]
+        else:
             continue
 
         # Retrive circRNA positions, convert minimap2 position to real position
-        ss_site, us_free, ds_free = search_splice_signal(circ_hit.ctg, circ_start, circ_end, clip_base)
+        ss_site, us_free, ds_free = search_splice_signal(circ_ctg, circ_start, circ_end, clip_base)
         if ss_site is None:
-            # Keep reads that seemed to generate from circRNAs, but cannot get splice signal
-            if not is_canonical:
-                ret.append((
-                    read_id, '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end),
-                    'NA', 'NA', 'NA', '{}-{}'.format(clip_base, len(circ)), 'NA', circ
-                ))
-                if '{}:{}-{}'.format(circ_hit.ctg.lstrip('chr'), circ_start + 1, circ_end) == ans_id:
-                    reads_cnt['right'] += 1
-                else:
-                    reads_cnt['wrong'] += 1
             continue
 
         ss_id, strand, us_shift, ds_shift = ss_site
@@ -904,40 +915,28 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
         # if is_canonical: keep canonical splice site only
         ss = ss_id.split('|')[0]
         if ss_site is None or (is_canonical and ss[-1] == '*'):
-        # if ss_site is None or (is_canonical and ss[-1] == '*' and ss != 'AG-GT*'):
             continue
 
-        circ_id = '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end)
-
-        # Get Cirexons
-        cir_exons = get_blocks(circ_hit)
-        cir_exons = merge_exons(cir_exons, clip_info)
-
+        circ_id = '{}:{}-{}'.format(circ_ctg, circ_start + 1, circ_end)
         cir_exons[0][0] = circ_start
         cir_exons[-1][1] = circ_end
 
         cir_exon_tag = []
         for cir_exon_start, cir_exon_end, _ in cir_exons:
-            cir_exon_tag.append('{}-{}'.format(cir_exon_start + 1, cir_exon_end))
+            tmp_start = '*' if cir_exon_start == '*' else cir_exon_start + 1
+            cir_exon_tag.append('{}-{}'.format(tmp_start, cir_exon_end))
 
-        # BSJ correction for 5' prime region
-        if strand == '+':
-            correction_shift = min(max(us_shift, us_free), ds_free)
-            circ_seq = circ[correction_shift:] + circ[:correction_shift]
-        else:
-            correction_shift = min(max(ds_shift, us_free), ds_free)
-            circ_seq = revcomp(circ[correction_shift:] + circ[:correction_shift])
+        correction_shift = min(max(us_shift, -us_free), ds_free)
+        circ_seq = circ if circ_strand > 0 else revcomp(circ)
+        circ_seq = circ_seq[correction_shift:] + circ_seq[:correction_shift]
 
         ret.append((
-            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-{}'.format(clip_base, len(circ)), 'NA', circ_seq
+            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-NA'.format(clip_base), 'partial', circ_seq
         ))
 
-        if '{}:{}-{}'.format(circ_hit.ctg.lstrip('chr'), circ_start + 1, circ_end) == ans_id:
-            reads_cnt['right'] += 1
-        else:
-            reads_cnt['wrong'] += 1
+        reads_cnt['partial'] += 1
 
-    return reads_cnt, ret
+    return reads_cnt, ret, short_reads
 
 
 def scan_raw_reads(in_file, ref_fasta, ss_index, is_canonical, out_dir, prefix, threads):
@@ -1011,11 +1010,14 @@ def scan_raw_reads(in_file, ref_fasta, ss_index, is_canonical, out_dir, prefix, 
     prog = ProgressBar()
     prog.update(0)
     finished_job = 0
+
+    short_reads = []
     with open('{}/{}.low_confidence.fa'.format(out_dir, prefix), 'w') as out:
         for job in jobs:
-            tmp_cnt, tmp_ret = job.get()
+            tmp_cnt, tmp_ret, tmp_short = job.get()
             for key, value in tmp_cnt.items():
                 reads_cnt[key] += value
+            short_reads += tmp_short
 
             for read_id, circ_id, strand, cir_exon_tag, ss_id, clip_info, segments, circ_seq in tmp_ret:
                 out.write('>{}\t{}\t{}\t{}\t{}\t{}\t{}\n{}\n'.format(
@@ -1028,5 +1030,136 @@ def scan_raw_reads(in_file, ref_fasta, ss_index, is_canonical, out_dir, prefix, 
     prog.update(100)
     pool.join()
 
-    print(reads_cnt)
-    sys.exit(1)
+    return reads_cnt, short_reads
+
+
+# def recover_raw_chunk(chunk, is_canonical):
+#     reads_cnt = defaultdict(int)
+#
+#     ret = []
+#     for read_id, seq in chunk:
+#         raw_hits = ALIGNER.map(seq)
+#         if raw_hits is None:
+#             continue
+#         raw_hits = sorted([i for i in raw_hits if i.is_primary], key=lambda x: [x.q_st, x.q_en])
+#         if len(raw_hits) == 0:
+#             continue
+#
+#         if len(raw_hits) == 1:
+#             raw_hit = raw_hits[0]
+#             if raw_hit.q_en - raw_hit.q_st < len(seq) * .45:
+#                 continue
+#             if raw_hit.q_en - raw_hit.q_st > len(seq) - 50:
+#                 continue
+#             if raw_hit.q_st < 50 and len(seq) - raw_hit.q_en < 50:
+#                 continue
+#
+#             circ, junc = find_bsj(seq)
+#             if junc is None:
+#                 continue
+#             circ_hits = ALIGNER.map(circ)
+#             if circ_hits is None:
+#                 continue
+#             circ_hits = sorted([i for i in circ_hits if i.is_primary], key=lambda x: [20, x.q_en])
+#             if len(circ_hits) == 0:
+#                 continue
+#
+#             if len(circ_hits) == 1:
+#                 circ_hit = circ_hits[0]
+#                 if circ_hit.mlen <= raw_hit.mlen:
+#                     continue
+#                 if min(junc, len(seq) - junc) < 30:
+#                     continue
+#                 if not junc + circ_hit.q_st < len(seq) < junc + circ_hit.q_en:
+#                     continue
+#                 circ_ctg, circ_start, circ_end = circ_hit.ctg, circ_hit.r_st, circ_hit.r_en
+#                 clip_base = circ_hit.q_st + len(seq) - circ_hit.q_en
+#
+#             elif len(circ_hits) == 2:
+#                 head, tail = circ_hits[0], circ_hits[1]
+#                 if head.ctg != tail.ctg:
+#                     continue
+#                 if not head.q_st + (head.q_en - head.q_st) * 0.5 < tail.q_st:
+#                     continue
+#                 if head.r_en - 20 < tail.r_st:
+#                     continue
+#                 if head.q_en < tail.q_st - 50:
+#                     continue
+#                 circ_ctg, circ_start, circ_end = head.ctg, tail.r_st, head.r_en
+#                 clip_base = abs(tail.q_st - head.q_en)
+#             else:
+#                 continue
+#
+#         elif len(raw_hits) == 2:
+#             head, tail = raw_hits[0], raw_hits[1]
+#             if head.ctg != tail.ctg:
+#                 continue
+#             if not head.q_st + (head.q_en - head.q_st) * 0.5 < tail.q_st:
+#                 continue
+#             if head.r_en - 20 < tail.r_st:
+#                 continue
+#             if head.q_en < tail.q_st - 50:
+#                 continue
+#             circ_ctg, circ_start, circ_end = head.ctg, tail.r_st, head.r_en
+#             clip_base = abs(tail.q_st - head.q_en)
+#
+#         else:
+#             continue
+#
+#         # Retrive circRNA positions, convert minimap2 position to real position
+#         ss_site, us_free, ds_free = search_splice_signal(circ_ctg, circ_start, circ_end, clip_base)
+#         if ss_site is None:
+#             continue
+#
+#         ss_id, strand, us_shift, ds_shift = ss_site
+#         circ_start += us_shift
+#         circ_end += ds_shift
+#
+#         # if is_canonical: keep canonical splice site only
+#         ss = ss_id.split('|')[0]
+#         if ss_site is None or (is_canonical and ss[-1] == '*'):
+#             continue
+#
+#         circ_id = '{}:{}-{}'.format(circ_ctg, circ_start + 1, circ_end)
+#
+#     return reads_cnt, ret
+#
+#
+# def recover_raw_reads(short_reads, ref_fasta, ss_index, is_canonical, out_dir, prefix, threads):
+#     from bwapy import BwaAligner
+#
+#     faidx = Faidx(ref_fasta)
+#     contig_len = faidx.contig_len
+#
+#     options = '-x ont2d -T 19'
+#     bwa_aligner = Aligner(BwaAligner(ref_fasta, options=options))
+#
+#     chunk_size = 250
+#     jobs = []
+#     pool = Pool(threads, initializer, (bwa_aligner, faidx, ss_index, contig_len))
+#     for reads in grouper(short_reads, chunk_size):
+#         chunk = [i for i in reads if i is not None]
+#         jobs.append(pool.apply_async(recover_raw_chunk, (chunk, is_canonical)))
+#     pool.close()
+#
+#     prog = ProgressBar()
+#     prog.update(0)
+#     finished_job = 0
+#
+#     reads_cnt = defaultdict(int)
+#     with open('{}/{}.low_confidence.fa'.format(out_dir, prefix), 'a') as out:
+#         for job in jobs:
+#             finished_job += 1
+#
+#             tmp_cnt, tmp_ret = job.get()
+#             for key, value in tmp_cnt.items():
+#                 reads_cnt[key] += value
+#
+#             prog.update(100 * finished_job // len(jobs))
+#
+#     pool.join()
+#     prog.update(100)
+#
+#     faidx.close()
+#
+#     return reads_cnt
