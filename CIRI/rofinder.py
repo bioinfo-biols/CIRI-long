@@ -245,7 +245,7 @@ def circular_finder(read_id, seq, k=8, use_hpc=True, p_match=.85, p_indel=.1, d_
 
 
 def find_consensus(header, seq):
-    from poa import consensus
+    from CIRI.poa import consensus
     from Levenshtein import distance
 
     # Trim sequence
