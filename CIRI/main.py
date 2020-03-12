@@ -105,8 +105,6 @@ def main():
     tmp_cnt, short_seq = scan_raw_reads(in_file, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
     for key, value in tmp_cnt.items():
         reads_count[key] += value
-    logger.info('Partial reads: {}'.format(reads_count['partial']))
-    sys.exit(1)
 
     # logger.info('Step 3.2 - Second scanning for BSJs')
     # tmp_cnt = recover_raw_reads(short_seq, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
