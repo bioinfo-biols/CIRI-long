@@ -90,15 +90,15 @@ def main():
 
     # Find circRNAs
     logger.info('Step 2.1 - Find circRNAs from CCS reads')
-    # tmp_cnt, short_seq = scan_ccs_reads(ccs_seq, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
-    # for key, value in tmp_cnt.items():
-    #     reads_count[key] += value
-    #
-    # # Recover short reads
-    # logger.info('Step 2.2 - Recover short CCS reads')
-    # tmp_cnt = recover_ccs_reads(short_seq, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
-    # for key, value in tmp_cnt.items():
-    #     reads_count[key] += value
+    tmp_cnt, short_seq = scan_ccs_reads(ccs_seq, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
+    for key, value in tmp_cnt.items():
+        reads_count[key] += value
+
+    # Recover short reads
+    logger.info('Step 2.2 - Recover short CCS reads')
+    tmp_cnt = recover_ccs_reads(short_seq, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
+    for key, value in tmp_cnt.items():
+        reads_count[key] += value
 
     # Find BSJs
     logger.info('Step 3 - Find circRNAs with partial structure')
