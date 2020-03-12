@@ -496,7 +496,7 @@ def align_clip_segments(circ, hit):
     """
     Align clip bases
     """
-    from lib.striped_smith_waterman.ssw_wrap import Aligner
+    from libs.striped_smith_waterman.ssw_wrap import Aligner
     from collections import Counter
     st_clip, en_clip = hit.q_st, len(circ) - hit.q_en
     clip_r_st, clip_r_en = None, None
