@@ -20,7 +20,7 @@ def read(infile):
 
 extensions = [
     Extension(
-        "CIRI/poa",
+        "CIRI.poa",
         sources=["CIRI/poa.pyx"],
         depends=["CIRI/cpoa.h", "CIRI/cpoa.pxd"],
         include_dirs=['./CIRI', 'vendor/spoa/include'],
