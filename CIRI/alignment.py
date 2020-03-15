@@ -217,6 +217,7 @@ def get_partial_blocks(hit, boundary):
     r_block = []
     q_idx = hit.q_st
     last_q = 0
+    last_start = 0
 
     for length, operation in hit.cigar:
         if operation == 0:
@@ -230,7 +231,7 @@ def get_partial_blocks(hit, boundary):
             r_end += length
         elif operation == 3:
             if r_start == '*':
-                r_block.append(['*', r_end, 'NA'])
+                r_block.append(['*', r_end, r_end - last_start + 1])
             else:
                 r_block.append([r_start, r_end, r_end - r_start + 1])
             r_start = r_end + length
@@ -238,13 +239,14 @@ def get_partial_blocks(hit, boundary):
         elif operation == 4:
             pass
 
-        if last_q <= boundary <= q_idx:
-            r_block.append([r_start, '*', 'NA'])
+        if last_q < boundary <= q_idx:
+            r_block.append([r_start, '*', r_end - r_start + 1])
+            last_start = r_end
             r_start = '*'
             last_q = boundary + 1
 
     if r_start == '*':
-        r_block.append(['*', r_end, 'NA'])
+        r_block.append(['*', r_end, r_end - last_start + 1])
     elif r_end > r_start:
         r_block.append([r_start, r_end, r_end - r_start + 1])
     else:
@@ -603,7 +605,7 @@ def scan_ccs_chunk(chunk, is_canonical):
             if not is_canonical:
                 ret.append((
                     read_id, '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end),
-                    'NA', 'NA', 'NA', '{}-{}'.format(clip_base, len(ccs)), segments,
+                    'NA', 'NA', 'NA', '{}|{}-{}'.format(junc, clip_base, len(ccs)), segments,
                     circ if circ_hit.strand > 0 else revcomp(circ)
                 ))
             continue
@@ -636,7 +638,8 @@ def scan_ccs_chunk(chunk, is_canonical):
         circ_seq = circ_seq[correction_shift:] + circ_seq[:correction_shift]
 
         ret.append((
-            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-{}'.format(clip_base, len(circ)), segments, circ_seq
+            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id,
+            '{}|{}-{}'.format(junc, clip_base, len(circ)), segments, circ_seq
         ))
         reads_cnt['signal'] += 1
 
@@ -728,7 +731,7 @@ def recover_ccs_chunk(chunk, is_canonical):
             if not is_canonical:
                 ret.append((
                     read_id, '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end),
-                    'NA', 'NA', 'NA', '{}-{}'.format(clip_base, len(ccs)), segments,
+                    'NA', 'NA', 'NA', '{}|{}-{}'.format(junc, clip_base, len(ccs)), segments,
                     circ if circ_hit.strand > 0 else revcomp(circ)
                 ))
             continue
@@ -761,7 +764,8 @@ def recover_ccs_chunk(chunk, is_canonical):
         circ_seq = circ_seq[correction_shift:] + circ_seq[:correction_shift]
 
         ret.append((
-            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-{}'.format(clip_base, len(circ)), segments, circ_seq
+            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id,
+            '{}|{}-{}'.format(junc, clip_base, len(circ)), segments, circ_seq
         ))
         reads_cnt['signal'] += 1
 
@@ -896,9 +900,9 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
             clip_base = abs(tail.q_st - head.q_en)
 
             head_exons = get_blocks(head)
-            head_exons[0] = ['*', head_exons[0][1], 'NA']
+            head_exons[0] = ['*', head_exons[0][1], head_exons[0][2]]
             tail_exons = get_blocks(tail)
-            tail_exons[-1] = [tail_exons[-1][0], '*', 'NA']
+            tail_exons[-1] = [tail_exons[-1][0], '*', head_exons[-1][2]]
             cir_exons = tail_exons + head_exons
 
             circ = circ[tail.q_st:] + circ[:tail.q_st]
@@ -911,7 +915,7 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
             if not is_canonical:
                 ret.append((
                     read_id, '{}:{}-{}'.format(circ_ctg, circ_start + 1, circ_end),
-                    'NA', 'NA', 'NA', '{}-NA'.format(clip_base), 'partial', circ if circ_strand > 0 else revcomp(circ)
+                    'NA', 'NA', 'NA', '{}|{}-NA'.format(junc, clip_base), 'partial', circ if circ_strand > 0 else revcomp(circ)
                 ))
             continue
 
@@ -929,16 +933,16 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
         cir_exons[-1][1] = circ_end
 
         cir_exon_tag = []
-        for cir_exon_start, cir_exon_end, _ in cir_exons:
+        for cir_exon_start, cir_exon_end, cir_exon_len in cir_exons:
             tmp_start = '*' if cir_exon_start == '*' else cir_exon_start + 1
-            cir_exon_tag.append('{}-{}'.format(tmp_start, cir_exon_end))
+            cir_exon_tag.append('{}-{}|{}'.format(tmp_start, cir_exon_end, cir_exon_len))
 
         correction_shift = min(max(us_shift, -us_free), ds_free)
         circ_seq = circ if circ_strand > 0 else revcomp(circ)
         circ_seq = circ_seq[correction_shift:] + circ_seq[:correction_shift]
 
         ret.append((
-            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}-NA'.format(clip_base), 'partial', circ_seq
+            read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id, '{}|{}-NA'.format(junc, clip_base), 'partial', circ_seq
         ))
 
         reads_cnt['partial'] += 1
