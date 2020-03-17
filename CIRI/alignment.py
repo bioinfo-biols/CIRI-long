@@ -631,8 +631,8 @@ def scan_ccs_chunk(chunk, is_canonical):
         cir_exons[-1][1] = circ_end
 
         cir_exon_tag = []
-        for cir_exon_start, cir_exon_end, _ in cir_exons:
-            cir_exon_tag.append('{}-{}'.format(cir_exon_start + 1, cir_exon_end))
+        for cir_exon_start, cir_exon_end, cir_exon_length in cir_exons:
+            cir_exon_tag.append('{}-{}|{}'.format(cir_exon_start + 1, cir_exon_end, cir_exon_length))
 
         # BSJ correction for 5' prime region
         correction_shift = min(max(us_shift, us_free), ds_free)
@@ -757,8 +757,8 @@ def recover_ccs_chunk(chunk, is_canonical):
         cir_exons[-1][1] = circ_end
 
         cir_exon_tag = []
-        for cir_exon_start, cir_exon_end, _ in cir_exons:
-            cir_exon_tag.append('{}-{}'.format(cir_exon_start + 1, cir_exon_end))
+        for cir_exon_start, cir_exon_end, cir_exon_length in cir_exons:
+            cir_exon_tag.append('{}-{}|{}'.format(cir_exon_start + 1, cir_exon_end, cir_exon_length))
 
         # BSJ correction for 5' prime region
         correction_shift = min(max(us_shift, us_free), ds_free)
