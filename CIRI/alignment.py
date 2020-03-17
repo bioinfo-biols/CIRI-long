@@ -275,16 +275,16 @@ def merge_exons(exons, clip_info):
 
 
 SPLICE_SIGNAL = {
-    ('GT', 'AG'): 0, # U2-type
-    ('GC', 'AG'): 1, # U2-type
-    ('AT', 'AC'): 2, # U12-type
-    # ('GT', 'TG'): 3, # non-canonical
-    # ('AT', 'AG'): 3, # non-canonical
-    # ('GA', 'AG'): 3, # non-canonical
-    # ('GG', 'AG'): 3, # non-canonical
-    # ('GT', 'GG'): 3, # non-canonical
-    # ('GT', 'AT'): 4, # non-canonical
-    # ('GT', 'AA'): 4, # non-canonical
+    ('GT', 'AG'): 0,  # U2-type
+    ('GC', 'AG'): 1,  # U2-type
+    ('AT', 'AC'): 2,  # U12-type
+    # ('GT', 'TG'): 3,  # non-canonical
+    # ('AT', 'AG'): 3,  # non-canonical
+    # ('GA', 'AG'): 3,  # non-canonical
+    # ('GG', 'AG'): 3,  # non-canonical
+    # ('GT', 'GG'): 3,  # non-canonical
+    # ('GT', 'AT'): 4,  # non-canonical
+    # ('GT', 'AA'): 4,  # non-canonical
 }
 
 
@@ -363,9 +363,11 @@ def search_splice_signal(contig, start, end, clip_base, search_length=10, shift_
 
     putative_ss = []
     for strand in ['+', '-']:
-        for (ds_ss, us_ss), ss_weight in SPLICE_SIGNAL.items():
+        for (tmp_ds_ss, tmp_us_ss), ss_weight in SPLICE_SIGNAL.items():
             if strand == '-':
-                ds_ss, us_ss = revcomp(us_ss), revcomp(ds_ss)
+                ds_ss, us_ss = revcomp(tmp_us_ss), revcomp(tmp_ds_ss)
+            else:
+                ds_ss, us_ss = tmp_ds_ss, tmp_us_ss
 
             # Find upstream signal
             tmp_us_start = 0
@@ -397,11 +399,12 @@ def search_splice_signal(contig, start, end, clip_base, search_length=10, shift_
                         continue
                     us_shift = i - us_search_length
                     ds_shift = j - us_search_length
-                    ss_id = '{}-{}*|{}-{}'.format(us_ss, ds_ss, us_shift, ds_shift)
+                    ss_id = '{}-{}*|{}-{}'.format(tmp_us_ss, tmp_ds_ss, us_shift, ds_shift)
                     putative_ss.append((
                         ss_id, strand, us_shift, ds_shift, ss_weight,
                         *ss_altered_length(us_shift, ds_shift, us_free, ds_free, clip_base)
                     ))
+            print(ds_ss, us_ss, strand)
 
     if len(putative_ss) > 0:
         return sort_splice_sites(putative_ss, us_free, ds_free, clip_base), us_free, ds_free
