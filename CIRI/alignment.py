@@ -404,7 +404,6 @@ def search_splice_signal(contig, start, end, clip_base, search_length=10, shift_
                         ss_id, strand, us_shift, ds_shift, ss_weight,
                         *ss_altered_length(us_shift, ds_shift, us_free, ds_free, clip_base)
                     ))
-            print(ds_ss, us_ss, strand)
 
     if len(putative_ss) > 0:
         return sort_splice_sites(putative_ss, us_free, ds_free, clip_base), us_free, ds_free
