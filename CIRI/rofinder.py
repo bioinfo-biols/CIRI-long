@@ -37,8 +37,8 @@ def split_hpc_kmers(seq, k=8):
     for x, (i, j) in enumerate(zip(seq[:-1], seq[1:])):
         if i != j:
             hpc.append(j)
-        if len(hpc) >= k:
-            yield x + 1, ''.join(hpc[-k:])
+            if len(hpc) >= k:
+                yield x + 1, ''.join(hpc[-k:])
 
 
 def compress_seq(seq):

@@ -72,15 +72,8 @@ class Aligner(object):
 
 
 OPERATION = {
-    'M': 0,
-    'I': 1,
-    'D': 2,
-    'N': 3,
-    'S': 4,
-    'H': 5,
-    'P': 6,
-    '=': 7,
-    'X': 8,
+    'M': 0, 'I': 1, 'D': 2, 'N': 3, 'S': 4, 'H': 5, 'P': 6, '=': 7, 'X': 8,
+    0: 'M', 1: 'I', 2: 'D', 3: 'N', 4: 'S', 5: 'H', 6: 'P', 7: '=', 9: 'X',
 }
 
 
@@ -124,7 +117,55 @@ class Hit(object):
         return r_en, q_st, q_en
 
     def __str__(self):
-        return '{}\t{}\t{}\t{}\t{}\t{}'.format(self.ctg, self.r_st, self.r_en, self.q_st, self.q_en, self.cigar_string)
+        return '\t'.join([str(x) for x in [self.q_st, self.q_en, self.ctg, self.r_st, self.r_en, self.mlen, self.blen,
+                                           self.cigar_string]])
+
+
+class SubHit(object):
+    def __init__(self, hit, r_st, q_st, cigar):
+        self.ctg = hit.ctg
+        self.strand = hit.strand
+        self.cigar = cigar
+        self.r_st = r_st
+        self.r_en, self.q_st, self.q_en = self.__parse_cigar(q_st)
+        self.mlen, self.blen = self.__match()
+        self.is_primary = 0
+
+    def __parse_cigar(self, q_st):
+        r_en = self.r_st
+        q_en = q_st
+        for length, operation in self.cigar:
+            if operation == 0:
+                q_en += length
+                r_en += length
+            elif operation == 1:
+                q_en += length
+            elif operation in [2, 3]:
+                r_en += length
+            elif operation in [4, 5]:
+                if q_st == 0:
+                    q_st += length
+                    q_en += length
+            else:
+                pass
+        return r_en, q_st, q_en
+
+    def __match(self):
+        mlen, blen = 0, 0
+        for l, o in self.cigar:
+            if o in [0, 1]:
+                mlen += l
+            if o in [0, 1, 2]:
+                blen += l
+        return mlen, blen
+
+    @property
+    def cigar_string(self):
+        return ''.join(['{}{}'.format(length, OPERATION[operation]) for length, operation in self.cigar])
+
+    def __str__(self):
+        return '\t'.join([str(x) for x in [self.q_st, self.q_en, self.ctg, self.r_st, self.r_en, self.mlen, self.blen,
+                                           self.cigar_string]])
 
 
 class Faidx(object):
@@ -442,13 +483,45 @@ def sort_splice_sites(sites, us, ds, clip_base):
     return None
 
 
+def remove_long_insert(hit):
+    r_st, q_st = hit.r_st, hit.q_st
+    last_r_st, last_q_st = r_st, q_st
+    last_cigar = []
+    sub_hits = []
+    for length, operation in hit.cigar:
+        if operation == 0:
+            r_st += length
+            q_st += length
+        elif operation == 1:
+            q_st += length
+            if length > 20:
+                sub_hits.append(SubHit(hit, last_r_st, last_q_st, last_cigar))
+                last_cigar = []
+                last_r_st, last_q_st = r_st, q_st
+                continue
+        elif operation in [2, 3]:
+            r_st += length
+        elif operation in [4, 5]:
+            if q_st == hit.q_st:
+                q_st += length
+        else:
+            pass
+        last_cigar.append((length, operation))
+    if last_cigar:
+        sub_hits.append(SubHit(hit, last_r_st, last_q_st, last_cigar))
+    primary_hit = sorted(sub_hits, key=lambda x: x.mlen, reverse=True)[0]
+    primary_hit.is_primary = 1
+
+    return primary_hit
+
+
 def get_primary_alignment(hits):
     if hits is None:
         return None
 
     for hit in hits:
         if hit.is_primary:
-            return hit
+            return remove_long_insert(hit)
 
     return None
 
@@ -483,7 +556,7 @@ def find_bsj(ccs):
         if st_clip >= en_clip:
             circ_junc = (circ_junc + st_clip) % len(circ)
         else:
-            circ_junc = (circ_junc - en_clip) % len(circ)
+            circ_junc = (circ_junc + circ_hit.q_en) % len(circ)
 
         if circ_junc in itered_junc:
             circ_junc = last_junc
@@ -503,28 +576,40 @@ def align_clip_segments(circ, hit):
     from libs.striped_smith_waterman.ssw_wrap import Aligner
     from collections import Counter
     st_clip, en_clip = hit.q_st, len(circ) - hit.q_en
-    clip_r_st, clip_r_en = None, None
+    clip_r_st, clip_r_en, clipped_circ = None, None, None
 
     if st_clip + en_clip >= 20:
         clip_seq = circ[hit.q_en:] + circ[:hit.q_st]
         if len(clip_seq) > 0.6 * len(circ):
-            return None, None, None
+            return None, None, None, None
 
         tmp_start = max(hit.r_st - 200000, 0)
         tmp_end = min(hit.r_en + 200000, CONTIG_LEN[hit.ctg])
 
         tmp_seq = FAIDX.seq(hit.ctg, tmp_start, tmp_end)
         if Counter(tmp_seq)['N'] >= 0.3 * (tmp_end - tmp_start):
-            return None, None, None
+            return None, None, None, None
 
         if hit.strand > 0:
             ssw = Aligner(tmp_seq, match=1, mismatch=1, gap_open=1, gap_extend=1)
             align_res = ssw.align(clip_seq)
             clip_r_st, clip_r_en = tmp_start + align_res.ref_begin, tmp_start + align_res.ref_end
+            if clip_r_st < hit.r_st:
+                clipped_circ = clip_seq[align_res.query_begin:] + \
+                               circ[hit.q_st:hit.q_en] + \
+                               clip_seq[:align_res.query_begin]
+            else:
+                clipped_circ = circ[hit.q_st:] + circ[:hit.q_st]
         else:
             ssw = Aligner(revcomp(tmp_seq), match=1, mismatch=1, gap_open=1, gap_extend=1)
             align_res = ssw.align(clip_seq)
             clip_r_st, clip_r_en = tmp_end - align_res.ref_end, tmp_end - align_res.ref_begin
+            if clip_r_en > hit.r_en:
+                clipped_circ = clip_seq[align_res.query_begin:] + \
+                               circ[hit.q_st:hit.q_en] + \
+                               clip_seq[:align_res.query_begin]
+            else:
+                clipped_circ = circ[hit.q_st:] + circ[:hit.q_st]
 
         clip_base = hit.q_st + len(circ) - hit.q_en - (align_res.query_end - align_res.query_begin) + 1
         circ_start = min(hit.r_st, clip_r_st) - 1
@@ -534,7 +619,9 @@ def align_clip_segments(circ, hit):
         circ_end = hit.r_en
         clip_base = st_clip + en_clip
 
-    return circ_start, circ_end, (clip_r_st, clip_r_en, clip_base)
+        clipped_circ = circ[hit.q_st:] + circ[:hit.q_en]
+
+    return clipped_circ, circ_start, circ_end, (clip_r_st, clip_r_en, clip_base)
 
 
 FAIDX = None
@@ -590,12 +677,12 @@ def scan_ccs_chunk(chunk, is_canonical):
         if circ_hit is None or circ_hit.mlen < 0.75 * len(circ):
             continue
 
-        circ_start, circ_end, clip_info = align_clip_segments(circ, circ_hit)
+        clipped_circ, circ_start, circ_end, clip_info = align_clip_segments(circ, circ_hit)
         if circ_start is None or circ_end is None:
             continue
 
         clip_base = clip_info[2]
-        if clip_base > 0.15 * len(ccs):
+        if clip_base > 0.15 * len(ccs) or clip_base > 20:
             continue
 
         reads_cnt['bsj'] += 1
@@ -636,7 +723,7 @@ def scan_ccs_chunk(chunk, is_canonical):
 
         # BSJ correction for 5' prime region
         correction_shift = min(max(us_shift, us_free), ds_free)
-        circ_seq = circ if circ_hit.strand > 0 else revcomp(circ)
+        circ_seq = clipped_circ if circ_hit.strand > 0 else revcomp(clipped_circ)
         circ_seq = circ_seq[correction_shift:] + circ_seq[:correction_shift]
 
         ret.append((
@@ -716,12 +803,12 @@ def recover_ccs_chunk(chunk, is_canonical):
         if circ_hit is None:
             continue
 
-        circ_start, circ_end, clip_info = align_clip_segments(circ, circ_hit)
+        clipped_circ, circ_start, circ_end, clip_info = align_clip_segments(circ, circ_hit)
         if circ_start is None or circ_end is None:
             continue
 
         clip_base = clip_info[2]
-        if clip_base > 0.15 * len(ccs):
+        if clip_base > 0.15 * len(ccs) or clip_base > 20:
             continue
 
         reads_cnt['bsj'] += 1
@@ -762,7 +849,7 @@ def recover_ccs_chunk(chunk, is_canonical):
 
         # BSJ correction for 5' prime region
         correction_shift = min(max(us_shift, us_free), ds_free)
-        circ_seq = circ if circ_hit.strand > 0 else revcomp(circ)
+        circ_seq = clipped_circ if circ_hit.strand > 0 else revcomp(clipped_circ)
         circ_seq = circ_seq[correction_shift:] + circ_seq[:correction_shift]
 
         ret.append((
@@ -847,10 +934,8 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
         if len(raw_hits) == 0:
             continue
         elif len(raw_hits) == 1:
-            raw_hit = raw_hits[0]
-            if raw_hit.q_en - raw_hit.q_st < len(seq) * .45:
-                continue
-            if raw_hit.q_en - raw_hit.q_st > len(seq) - 50:
+            raw_hit = remove_long_insert(raw_hits[0])
+            if raw_hit.mlen < len(seq) * .45 or raw_hit.mlen > len(seq) - 50:
                 continue
             if raw_hit.q_st < 50 and raw_hit.q_en > len(seq) - 50:
                 continue
@@ -859,10 +944,10 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
                 continue
 
         elif len(raw_hits) == 2:
-            head, tail = raw_hits[0], raw_hits[1]
+            head, tail = remove_long_insert(raw_hits[0]), remove_long_insert(raw_hits[1])
             if head.ctg != tail.ctg:
                 continue
-            if not head.q_st + (head.q_en - head.q_st) * 0.5 < tail.q_st:
+            if not head.q_st + head.mlen * 0.45 < tail.q_st:
                 continue
             if head.r_en - 20 < tail.r_st:
                 continue
@@ -874,7 +959,7 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
         else:
             continue
 
-        circ_hits = sorted([i for i in ALIGNER.map(circ) if i.is_primary], key=lambda x: [x.q_st, x.q_en])
+        circ_hits = sorted([remove_long_insert(i) for i in ALIGNER.map(circ) if i.is_primary], key=lambda x: [x.q_st, x.q_en])
         if len(circ_hits) == 0:
             continue
         elif len(circ_hits) == 1:
@@ -896,7 +981,7 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
                 continue
             if head.r_en - 20 < tail.r_st:
                 continue
-            if head.q_en < tail.q_st - 50:
+            if head.q_en < tail.q_st - 20:
                 continue
             circ_ctg, circ_start, circ_end, circ_strand = head.ctg, tail.r_st, head.r_en, head.strand
             clip_base = abs(tail.q_st - head.q_en)
@@ -909,6 +994,9 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
 
             circ = circ[tail.q_st:] + circ[:tail.q_st]
         else:
+            continue
+
+        if clip_base > 20:
             continue
 
         # Retrive circRNA positions, convert minimap2 position to real position

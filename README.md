@@ -30,6 +30,7 @@ The code is released under the MIT License. See the `LICENSE` file for more deta
 please refer to documentation of [pysam](https://pysam.readthedocs.io/en/latest/installation.html) for installation instructions
 - all python dependencies are listed in `requirements.txt`
 - `samtools` version 1.9 or higher
+- minimap2
 
 #### Installation
 
