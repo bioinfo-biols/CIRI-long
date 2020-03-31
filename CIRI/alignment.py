@@ -341,6 +341,8 @@ def search_splice_signal(contig, start, end, clip_base, search_length=10, shift_
     # start | real_start <-> end | real_end
     ds_free = 0
     for i in range(100):
+        if end + i > CONTIG_LEN[contig]:
+            break
         if FAIDX.seq(contig, start, start + i) == FAIDX.seq(contig, end, end + i):
             ds_free = i
         else:
@@ -348,11 +350,15 @@ def search_splice_signal(contig, start, end, clip_base, search_length=10, shift_
 
     us_free = 0
     for j in range(100):
+        if start - j < 0:
+            break
         if FAIDX.seq(contig, start - j, start) == FAIDX.seq(contig, end - j, end):
             us_free = j
         else:
             break
 
+    if start - search_length - us_free - 2 < 0 or end + search_length + ds_free + 2 > CONTIG_LEN[contig]:
+        return None, us_free, ds_free
     # Splice site: site_id, strand, us_shift, ds_shift, site_weight, altered_len, altered_total
     # First: Find flanking junction from annotation gtf
     if SS_INDEX is not None:
