@@ -144,16 +144,16 @@ def correct_chunk(chunk):
             continue
 
         ref = cluster[0]
-        ssw = Aligner(ref.seq, match=10, mismatch=4, gap_open=8, gap_extend=2)
+        ssw = Aligner(ref.seq[:50], match=10, mismatch=4, gap_open=8, gap_extend=2)
 
         head_pos = []
         for query in cluster[1:]:
-            alignment = ssw.align(query.seq)
+            alignment = ssw.align(query.seq[:50])
 
             head_pos.append(alignment.ref_begin)
             if alignment.ref_begin > 20:
                 from spoa import poa
-                _, msa = poa([ref.seq, query.seq], 0, True, 10, -4, -8, -2, -24, -4)
+                _, msa = poa([ref.seq[:50], query.seq[:50]], 0, True, 10, -4, -8, -2, -24, -4)
                 print(msa)
 
         trans_reads = []

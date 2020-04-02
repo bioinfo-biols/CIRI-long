@@ -621,11 +621,10 @@ def align_clip_segments(circ, hit):
         circ_start = min(hit.r_st, clip_r_st) - 1
         circ_end = max(hit.r_en, clip_r_en)
     else:
+        clipped_circ = circ[hit.q_st:] + circ[:hit.q_st]
+        clip_base = st_clip + en_clip
         circ_start = hit.r_st - 1
         circ_end = hit.r_en
-        clip_base = st_clip + en_clip
-
-        clipped_circ = circ[hit.q_st:] + circ[:hit.q_en]
 
     return clipped_circ, circ_start, circ_end, (clip_r_st, clip_r_en, clip_base)
 

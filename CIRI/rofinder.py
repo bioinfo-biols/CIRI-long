@@ -117,9 +117,9 @@ def circular_hits(kmers, k, tuple_dis_mean, tuple_dis_delta, p_match, use_hpc):
     hits = {}
     for i in pos:
         j, _, score, _ = optimal_hit(kmers, kmers[i],
-                                  i + tuple_dis_mean - tuple_dis_delta,
-                                  i + tuple_dis_mean + tuple_dis_delta,
-                                  use_hpc)
+                                     i + tuple_dis_mean - tuple_dis_delta,
+                                     i + tuple_dis_mean + tuple_dis_delta,
+                                     use_hpc)
         if score > int(k * (1 - p_match)):
             continue
         hits[i] = (i, j, j - i, score)
@@ -223,6 +223,8 @@ def circular_finder(read_id, seq, k=8, use_hpc=True, p_match=.85, p_indel=.1, d_
 
     # Hits of kmers
     tuple_hits = circular_hits(kmers, k, tuple_dis_mean, tuple_dis_delta, p_match, use_hpc)
+    if not tuple_hits:
+        return None, None
 
     # Primary chain
     primary_chain = optimal_chains(tuple_hits)
