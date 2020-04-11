@@ -13,26 +13,6 @@ from CIRI.utils import grouper, exit_after
 LOGGER = logging.getLogger('CIRI-long')
 
 
-# Parsing GTF format
-GENE_ID = re.compile(r'gene_id "(\S+)";')
-GENE_BIOTYPE = re.compile(r'gene_biotype "(\S+)";')
-GENE_TYPE = re.compile(r'gene_type "(\S+)";')
-GENE_NAME = re.compile(r'gene_name "(\S+)";')
-TSCP_ID = re.compile(r'transcript_id "(\S+)";')
-TSCP_NAME = re.compile(r'transcript_name "(\S+)";')
-TSCP_BIOTYPE = re.compile(r'transcript_biotype "(\S+)";')
-
-ATTR = {
-    # 'gene_id': GENE_ID,
-    # 'gene_name': GENE_NAME,
-    'gene_biotype': GENE_BIOTYPE,
-    'gene_type': GENE_TYPE
-    # 'transcript_id': TSCP_ID,
-    # 'transcript_name': TSCP_NAME,
-    # 'transcript_biotype': TSCP_BIOTYPE,
-}
-
-
 class GTFParser(object):
     """
     Class for parsing annotation gtf
@@ -44,14 +24,18 @@ class GTFParser(object):
         self.type = content[2]
         self.start, self.end = int(content[3]), int(content[4])
         self.strand = content[6]
-        self.attr_string = content[-1]
+        self.attr_string = content[8]
 
-    def attr(self, key):
-        """match attribute string for row"""
-        try:
-            return ATTR[key].search(self.attr_string).group(1)
-        except AttributeError:
-            return None
+    @property
+    def attr(self):
+        """
+        Parsing attribute column in gtf file
+        """
+        field = {}
+        for attr_values in [re.split(r'\s+', i.strip()) for i in self.attr_string.split(';')[:-1]]:
+            key, value = attr_values[0], attr_values[1:]
+            field[key] = ' '.join(value).strip('"')
+        return field
 
 
 class Aligner(object):
@@ -218,11 +202,6 @@ def index_annotation(gtf):
                 splice_site_index[parser.contig][parser.start][parser.strand] = 1
                 splice_site_index[parser.contig][parser.end][parser.strand] = 1
 
-            # if parser.attr('gene_biotype') is None or parser.attr('gene_biotype') in ['lincRNA', 'pseudogene']:
-            #     continue
-            # if parser.attr('gene_type') is None or parser.attr('gene_type') in ['lincRNA', 'pseudogene']:
-            #     continue
-
             # Binned index
             start_div, end_div = parser.start // 500, parser.end // 500
             for i in range(start_div, end_div + 1):
@@ -319,6 +298,8 @@ SPLICE_SIGNAL = {
     ('GT', 'AG'): 0,  # U2-type
     ('GC', 'AG'): 1,  # U2-type
     ('AT', 'AC'): 2,  # U12-type
+    ('GT', 'AC'): 2,  # U12-type
+    ('AT', 'AG'): 2,  # U12-type
     # ('GT', 'TG'): 3,  # non-canonical
     # ('AT', 'AG'): 3,  # non-canonical
     # ('GA', 'AG'): 3,  # non-canonical
@@ -522,7 +503,7 @@ def remove_long_insert(hit):
 
 
 def get_primary_alignment(hits):
-    if hits is None:
+    if not hits:
         return None
 
     for hit in hits:
@@ -700,7 +681,7 @@ def scan_ccs_chunk(chunk, is_canonical):
                 ret.append((
                     read_id, '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end),
                     'NA', 'NA', 'NA', '{}|{}-{}'.format(junc, clip_base, len(ccs)), segments,
-                    circ if circ_hit.strand > 0 else revcomp(circ)
+                    clipped_circ if circ_hit.strand > 0 else revcomp(clipped_circ)
                 ))
             continue
 
@@ -826,7 +807,7 @@ def recover_ccs_chunk(chunk, is_canonical):
                 ret.append((
                     read_id, '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end),
                     'NA', 'NA', 'NA', '{}|{}-{}'.format(junc, clip_base, len(ccs)), segments,
-                    circ if circ_hit.strand > 0 else revcomp(circ)
+                    clipped_circ if circ_hit.strand > 0 else revcomp(clipped_circ)
                 ))
             continue
 
@@ -913,10 +894,10 @@ def recover_ccs_reads(short_reads, ref_fasta, ss_index, is_canonical, out_dir, p
 
 def check_read(segments, seq):
     from CIRI.poa import consensus
-    fasta = [(i, seq[int(i.split('-')[0]):int(i.split('-')[1])]) for i in segments.split(';')]
+    fasta = [seq[int(i.split('-')[0]):int(i.split('-')[1])] for i in segments.split(';')]
     consensus(fasta, alignment_type=1,
-                     match=1, mismatch=-1, gap=-1, extension=-1, gap_affine=-1, extension_affine=-1,
-                     debug=1)
+              match=1, mismatch=-1, gap=-1, extension=-1, gap_affine=-1, extension_affine=-1,
+              debug=1)
 
 
 def scan_raw_chunk(chunk, is_canonical, circ_reads):

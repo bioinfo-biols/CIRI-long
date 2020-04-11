@@ -18,7 +18,7 @@ def consensus(fasta, alignment_type=1, match=10, mismatch=-4,
     :return: string of consensus sequence
     """
 
-    sequences = [seq.encode('utf-8') for name, seq in fasta]
+    sequences = [seq.encode('utf-8') for seq in fasta]
     # sequences = [seq.encode('utf-8') for name, seq in sorted(fasta, key=lambda x: len(x[1]), reverse=True)]
     cdef int l = alignment_type
     cdef int m = match

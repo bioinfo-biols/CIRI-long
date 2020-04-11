@@ -101,7 +101,7 @@ def collapse(args):
     from CIRI.logger import get_logger
     from CIRI.utils import check_file, check_dir
     from CIRI.alignment import index_annotation
-    from CIRI.collapse import load_cand_circ, cluster_reads, correct_reads, scan_corrected_reads, recover_corrected_reads
+    from CIRI import collapse
 
     if args.input is None or args.output is None:
         sys.exit('Please provide input and output file, run CIRI-long using -h or --help for detailed information.')
@@ -125,24 +125,6 @@ def collapse(args):
     logger.info('Multi threads: {}'.format(args.threads))
     logger.info('-------------- Collapse circular reads -------------')
 
-    # Load reads
-    cand_circ = load_cand_circ(in_file)
-
-    # Consensus reads
-    corrected_file = '{}/tmp/{}.corrected.pkl'.format(out_dir, prefix)
-    if not debugging and os.path.exists(corrected_file):
-        logger.info('Step 1 - Loading clustered circular reads in previous run')
-        with open(corrected_file, 'rb') as pkl:
-            corrected_reads = pickle.load(pkl)
-    else:
-        logger.info('Step 1 - Clustering candidate circular reads')
-        # Cluster reads
-        reads_cluster = cluster_reads(cand_circ)
-        # Generate consensus reads
-        corrected_reads = correct_reads(reads_cluster, threads)
-        with open(corrected_file, 'wb') as pkl:
-            pickle.dump(corrected_reads, pkl, -1)
-
     # generate index of splice site and annotation
     if gtf_file is None:
         logger.warn('No genome annotation provided, entering \'De novo\' mode')
@@ -158,14 +140,42 @@ def collapse(args):
             with open(idx_file, 'wb') as idx:
                 pickle.dump([gtf_idx, ss_idx], idx, -1)
 
-    # Find circRNAs again
-    corrected_circ, short_reads = scan_corrected_reads(corrected_reads, ref_fasta, ss_idx, threads)
+    # Load reads
+    cand_reads = collapse.load_cand_circ(in_file)
 
-    # Recover short circRNAs
-    corrected_circ += recover_corrected_reads(short_reads, ref_fasta, ss_idx)
+    # Consensus reads
+    corrected_file = '{}/tmp/{}.corrected.pkl'.format(out_dir, prefix)
+    if not debugging and os.path.exists(corrected_file):
+        logger.info('Step 1 - Loading clustered circular reads in previous run')
+        with open(corrected_file, 'rb') as pkl:
+            corrected_reads = pickle.load(pkl)
+    else:
+        logger.info('Step 1 - Clustering candidate circular reads')
+        # Cluster reads
+        reads_cluster = collapse.cluster_reads(cand_reads)
+        # Generate consensus reads
+        corrected_reads = collapse.correct_reads(reads_cluster, ref_fasta, ss_idx, threads)
+        with open(corrected_file, 'wb') as pkl:
+            pickle.dump(corrected_reads, pkl, -1)
 
-    with open('{}/{}_circ.pkl'.format(out_dir, prefix), 'wb') as idx:
-        pickle.dump(corrected_circ, idx, -1)
+    logger.info('Step 2 - Calculating expression matrix')
+    collapse.cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix)
+
+    # # Find circRNAs again
+    # logger.info('Correct circRNAs from consensus reads!')
+    # corrected_circ, short_reads = scan_corrected_reads(corrected_reads, ref_fasta, ss_idx, threads)
+    #
+    # # Recover short circRNAs
+    # logger.info('Recover short circRNAs from consensus reads!')
+    # corrected_circ += recover_corrected_reads(short_reads, ref_fasta, ss_idx)
+    #
+    # logger.info('Clustered circRNAs: {}'.format(len(corrected_reads)))
+    # logger.info('Corrected circRNAs: {}'.format(len(corrected_circ)))
+    #
+    # with open('{}/{}_circ.pkl'.format(out_dir, prefix), 'wb') as idx:
+    #     pickle.dump(corrected_circ, idx, -1)
+
+    logger.info('Correction of Back-Spliced Junctions finished!')
 
 
 def main():

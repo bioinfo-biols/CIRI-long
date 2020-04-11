@@ -276,17 +276,17 @@ def find_consensus(header, seq):
     if len(chains) < 2:
         return None, None, None
 
-    fasta = [('{}-{}'.format(s, e), seq[s:e]) for s, e in chains]
-    ccs = consensus(fasta, alignment_type=1,
-                    match=10, mismatch=-4, gap=-8, extension=-2, gap_affine=-24, extension_affine=-4,
+    fasta = [seq[s:e] for s, e in chains]
+    ccs = consensus(fasta, alignment_type=2,
+                    match=10, mismatch=-4, gap=-8, extension=-2, gap_affine=-24, extension_affine=-1,
                     debug=0)
 
     # Check segment similarity
-    tail = fasta[-1][1]
+    tail = fasta[-1]
     if len(fasta) == 2:
-        dis_body = distance(fasta[0][1][:len(tail)], ccs[:len(tail)]) / len(tail)
+        dis_body = distance(fasta[0][:len(tail)], ccs[:len(tail)]) / len(tail)
     else:
-        dis_body = max([distance(i[1], ccs) / len(ccs) for i in fasta[:-1]])
+        dis_body = max([distance(i, ccs) / len(ccs) for i in fasta[:-1]])
     dis_tail = distance(tail, ccs[:len(tail)]) / len(tail)
 
     if dis_body > 0.2 or dis_tail > 0.35:
