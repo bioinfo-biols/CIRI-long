@@ -61,11 +61,11 @@ def call(args):
         if os.path.exists(idx_file):
             logger.info('Loading pre-built splice site index from: {}'.format(idx_file))
             with open(idx_file, 'rb') as idx:
-                gtf_idx, ss_idx = pickle.load(idx)
+                gtf_idx, intron_idx, ss_idx = pickle.load(idx)
         else:
-            gtf_idx, ss_idx = index_annotation(gtf_file)
+            gtf_idx, intron_idx, ss_idx = index_annotation(gtf_file)
             with open(idx_file, 'wb') as idx:
-                pickle.dump([gtf_idx, ss_idx], idx)
+                pickle.dump([gtf_idx, intron_idx, ss_idx], idx, -1)
 
     # Find circRNAs
     logger.info('Step 2.1 - Find circRNAs from CCS reads')
