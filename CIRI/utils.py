@@ -97,3 +97,13 @@ def pairwise(iterable):
 def tree():
     from collections import defaultdict
     return defaultdict(tree)
+
+
+def flatten(x):
+    """
+    Flatten list of lists
+    """
+    import itertools
+
+    flatted_list = list(itertools.chain(*x))
+    return flatted_list

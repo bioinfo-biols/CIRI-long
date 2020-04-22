@@ -134,11 +134,11 @@ def collapse(args):
         if os.path.exists(idx_file):
             logger.info('Loading pre-built splice site index from: {}'.format(idx_file))
             with open(idx_file, 'rb') as idx:
-                gtf_idx, ss_idx = pickle.load(idx)
+                gtf_idx, intron_idx, ss_idx = pickle.load(idx)
         else:
-            gtf_idx, ss_idx = index_annotation(gtf_file)
+            gtf_idx, intron_idx, ss_idx = index_annotation(gtf_file)
             with open(idx_file, 'wb') as idx:
-                pickle.dump([gtf_idx, ss_idx], idx, -1)
+                pickle.dump([gtf_idx, intron_idx, ss_idx], idx, -1)
 
     # Load reads
     cand_reads = collapse.load_cand_circ(in_file)
@@ -153,13 +153,17 @@ def collapse(args):
         logger.info('Step 1 - Clustering candidate circular reads')
         # Cluster reads
         reads_cluster = collapse.cluster_reads(cand_reads)
+        logger.info('Circular reads clusters: {}'.format(len(reads_cluster)))
+
         # Generate consensus reads
-        corrected_reads = collapse.correct_reads(reads_cluster, ref_fasta, ss_idx, threads)
+        corrected_reads = collapse.correct_reads(reads_cluster, ref_fasta, gtf_idx, intron_idx, ss_idx, threads)
         with open(corrected_file, 'wb') as pkl:
             pickle.dump(corrected_reads, pkl, -1)
+        logger.info('Corrected clusters: {}'.format(len(corrected_reads)))
 
     logger.info('Step 2 - Calculating expression matrix')
-    collapse.cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix)
+    circ_cnt = collapse.cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix)
+    logger.info('Final circRNAs: {}'.format(circ_cnt))
 
     # # Find circRNAs again
     # logger.info('Correct circRNAs from consensus reads!')

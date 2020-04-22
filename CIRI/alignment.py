@@ -186,7 +186,10 @@ def index_annotation(gtf):
 
     LOGGER.info('Loading annotation gtf ..')
     gtf_index = defaultdict(dict)
+    intron_index = defaultdict(dict)
     splice_site_index = tree()
+
+    last_exon = None
     with open(gtf, 'r') as f:
         for line in f:
             if line.startswith('#'):
@@ -197,17 +200,31 @@ def index_annotation(gtf):
                 continue
 
             parser = GTFParser(content)
+
             # Extract splice site
             if content[2] == 'exon':
-                splice_site_index[parser.contig][parser.start][parser.strand] = 1
-                splice_site_index[parser.contig][parser.end][parser.strand] = 1
+                splice_site_index[parser.contig][parser.start][parser.strand]['start'] = 1
+                splice_site_index[parser.contig][parser.end][parser.strand]['end'] = 1
+
+                # Load intron
+                if last_exon is not None and last_exon.attr['transcript_id'] == parser.attr['transcript_id']:
+                    intron_start = last_exon.end if last_exon.strand == '+' else last_exon.start
+                    intron_end = parser.start if parser.strand == '+' else parser.end
+                    intron_strand = parser.strand
+
+                    intron_start, intron_end = min(intron_start, intron_end), max(intron_start, intron_end)
+                    start_div, end_div = intron_start // 500, intron_end // 500
+                    for i in range(start_div, end_div + 1):
+                        intron_index[parser.contig].setdefault(i, []).append((intron_start, intron_end, intron_strand))
+
+                last_exon = parser
 
             # Binned index
             start_div, end_div = parser.start // 500, parser.end // 500
             for i in range(start_div, end_div + 1):
                 gtf_index[parser.contig].setdefault(i, []).append(parser)
 
-    return gtf_index, splice_site_index
+    return gtf_index, intron_index, splice_site_index
 
 
 def get_blocks(hit):
