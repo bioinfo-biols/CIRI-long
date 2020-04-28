@@ -305,7 +305,7 @@ def scan_ccs_chunk(chunk, is_canonical):
 
         # Get Cirexons
         cir_exons = get_blocks(circ_hit)
-        cir_exons = merge_exons(cir_exons, clip_info)
+        cir_exons = merge_clip_exon(cir_exons, clip_info)
 
         cir_exons[0][0] = circ_start
         cir_exons[-1][1] = circ_end
@@ -436,7 +436,7 @@ def recover_ccs_chunk(chunk, is_canonical):
 
         # Get Cirexons
         cir_exons = get_blocks(circ_hit)
-        cir_exons = merge_exons(cir_exons, clip_info)
+        cir_exons = merge_clip_exon(cir_exons, clip_info)
 
         cir_exons[0][0] = circ_start
         cir_exons[-1][1] = circ_end
@@ -567,7 +567,7 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
                 continue
             circ_ctg, circ_start, circ_end, circ_strand = circ_hit.ctg, circ_hit.r_st, circ_hit.r_en, circ_hit.strand
             clip_base = circ_hit.q_st + len(seq) - circ_hit.q_en
-            cir_exons = get_partial_blocks(circ_hit, len(seq) - junc)
+            cir_exons = get_parital_blocks(circ_hit, len(seq) - junc)
         elif len(circ_hits) == 2:
             head, tail = circ_hits[0], circ_hits[1]
             if head.ctg != tail.ctg or head.strand != tail.strand:
@@ -582,10 +582,9 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
             clip_base = abs(tail.q_st - head.q_en)
 
             head_exons = get_blocks(head)
-            head_exons[0] = ['*', head_exons[0][1], head_exons[0][2]]
             tail_exons = get_blocks(tail)
-            tail_exons[-1] = [tail_exons[-1][0], '*', head_exons[-1][2]]
-            cir_exons = tail_exons + head_exons
+
+            cir_exons = merge_exons(tail_exons, head_exons)
 
             circ = circ[tail.q_st:] + circ[:tail.q_st]
         else:
@@ -625,8 +624,7 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
 
         cir_exon_tag = []
         for cir_exon_start, cir_exon_end, cir_exon_len in cir_exons:
-            tmp_start = '*' if cir_exon_start == '*' else cir_exon_start + 1
-            cir_exon_tag.append('{}-{}|{}'.format(tmp_start, cir_exon_end, cir_exon_len))
+            cir_exon_tag.append('{}-{}|{}'.format(cir_exon_start, cir_exon_end, cir_exon_len))
 
         correction_shift = min(max(us_shift, -us_free), ds_free)
         circ_seq = circ if circ_strand > 0 else revcomp(circ)

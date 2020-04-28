@@ -11,8 +11,24 @@ from CIRI.utils import *
 LOGGER = logging.getLogger('CIRI-long')
 
 OPERATION = {
-    'M': 0, 'I': 1, 'D': 2, 'N': 3, 'S': 4, 'H': 5, 'P': 6, '=': 7, 'X': 8,
-    0: 'M', 1: 'I', 2: 'D', 3: 'N', 4: 'S', 5: 'H', 6: 'P', 7: '=', 9: 'X',
+    'M': 0,
+    'I': 1,
+    'D': 2,
+    'N': 3,
+    'S': 4,
+    'H': 5,
+    'P': 6,
+    '=': 7,
+    'X': 8,
+    0: 'M',
+    1: 'I',
+    2: 'D',
+    3: 'N',
+    4: 'S',
+    5: 'H',
+    6: 'P',
+    7: '=',
+    9: 'X',
 }
 
 SPLICE_SIGNAL = {
@@ -283,50 +299,71 @@ def get_blocks(hit):
     return r_block
 
 
-def get_partial_blocks(hit, boundary):
+def get_exons(hit):
     r_start, r_end = hit.r_st, hit.r_st
+    q_start, q_end = hit.q_st, hit.q_en
     r_block = []
-    q_idx = hit.q_st
-    last_q = 0
-    last_start = 0
-
     for length, operation in hit.cigar:
         if operation == 0:
             r_end += length
-            last_q = q_idx
-            q_idx += length
+            q_end += length
         elif operation == 1:
-            last_q = q_idx
-            q_idx += length
+            q_end += length
         elif operation == 2:
             r_end += length
         elif operation == 3:
-            if r_start == '*':
-                r_block.append(['*', r_end, r_end - last_start + 1])
-            else:
-                r_block.append([r_start, r_end, r_end - r_start + 1])
+            r_block.append([r_start, r_end, q_start, q_end])
             r_start = r_end + length
             r_end = r_start
+            q_start = q_end
         elif operation == 4:
             pass
 
-        if last_q < boundary <= q_idx:
-            r_block.append([r_start, '*', r_end - r_start + 1])
-            last_start = r_end
-            r_start = '*'
-            last_q = boundary + 1
-
-    if r_start == '*':
-        r_block.append(['*', r_end, r_end - last_start + 1])
-    elif r_end > r_start:
-        r_block.append([r_start, r_end, r_end - r_start + 1])
+    if r_end > r_start:
+        r_block.append([r_start, r_end, q_start, q_end])
     else:
         pass
 
     return r_block
 
 
-def merge_exons(exons, clip_info):
+def get_parital_blocks(hit, junc):
+    exons = get_exons(hit)
+    blocks = []
+    for r_st, r_en, q_st, q_en in exons:
+        if abs(q_st - junc) <= 10 and abs(q_en - junc) <= 10:
+            blocks.append([r_st, r_en, '*'])
+        else:
+            blocks.append([r_st, r_en, r_en - r_st + 1])
+    return blocks
+
+
+def merge_blocks(blocks):
+    from operator import itemgetter
+    tmp = sorted(blocks, key=itemgetter(0, 1))
+    merged = []
+    last_st, last_en = tmp[0][0], tmp[0][1]
+    for st, en, length in tmp[1:]:
+        if st <= last_en:
+            last_en = max(en, last_en)
+            last_st = min(st, last_st)
+        else:
+            merged.append([last_st, last_en, last_en - last_st + 1])
+            last_st, last_en = st, en
+    merged.append([last_st, last_en, last_en - last_st + 1])
+    return merged
+
+
+def merge_exons(tail_exons, head_exons):
+    if head_exons[0][0] < tail_exons[-1][1]:
+        return merge_blocks(tail_exons + head_exons)
+    else:
+        head_exons[0] = [head_exons[0], head_exons[1], '*-']
+        tail_exons[-1] = [tail_exons[-1][0], tail_exons[-1][0], '-*']
+        return tail_exons + head_exons
+
+
+def merge_clip_exon(exons, clip_info):
     clip_st, clip_en, clip_base = clip_info
     exon_st, exon_en = exons[0][0], exons[-1][1]
 
