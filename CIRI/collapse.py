@@ -4,9 +4,11 @@ import numpy as np
 from multiprocessing import Pool
 from collections import defaultdict, Counter, namedtuple
 
-from CIRI.utils import tree, grouper
+from CIRI import env
+from CIRI.align import *
+from CIRI.utils import *
 from CIRI.logger import ProgressBar
-from CIRI.alignment import SPLICE_SIGNAL
+
 
 LOGGER = logging.getLogger('CIRI-long')
 READ = namedtuple('Read', 'read_id circ_id strand cirexon ss clip segments seq sample type')
@@ -18,7 +20,7 @@ def load_cand_circ(in_file):
     sample_attr = {}
     with open(in_file, 'r') as f:
         for line in f:
-            sample, fname = line.rstrip().split('\t')
+            sample, fname = line.rstrip().split()
             sample_attr[sample] = fname
 
     cand_reads = {}
@@ -124,66 +126,14 @@ def cluster_reads(cand_reads):
     return reads_cluster
 
 
-CONTIG_LEN = None
-GENOME = None
-GTF_INDEX = None
-INTRON_INDEX = None
-SS_INDEX = None
-
-
-def initializer(contig_len, genome, gtf_index, intron_index, ss_index):
-    global CONTIG_LEN, GENOME, GTF_INDEX, INTRON_INDEX, SS_INDEX
-    CONTIG_LEN = contig_len
-    GENOME = genome
-    GTF_INDEX = gtf_index
-    INTRON_INDEX = intron_index
-    SS_INDEX = ss_index
-
-
-def shift_base(seq):
-    base = 0
-    for i in seq:
-        if i in 'atcgATGC':
-            break
-        else:
-            base += 1
-    return base
-
-
-def transform_seq(seq, bsj):
-    return seq[bsj:] + seq[:bsj]
-
-
-def junction_seq(seq, bsj, width=25):
-    st, en = bsj - width, bsj + width
-    if len(seq) <= 2 * width:
-        return seq[bsj-len(seq)//2:] + seq[:bsj-len(seq)//2]
-
-    if st < 0:
-        if en < 0:
-            return seq[st:en]
-        else:
-            return seq[st:] + seq[:en]
-    elif en > len(seq):
-        return seq[st:] + seq[:en-len(seq)]
-    else:
-        return seq[st:en]
-
-
 def genome_junction_seq(contig, start, end, width=25):
-    return GENOME[contig][end - width:end] + GENOME[contig][start:start + width]
+    return env.GENOME.seq(contig, end-width, end) + env.GENOME.seq(contig, start, start + width)
 
 
 def avg_score(alignment, ref, query):
     from Levenshtein import distance
     x = query[alignment.query_begin:alignment.query_end]
     return distance(ref, x) / len(ref)
-
-
-def min_sorted_items(iters, key, reverse=False):
-    from operator import itemgetter
-    x = sorted(iters, key=itemgetter(key), reverse=reverse)
-    return [i for i in x if i[key] == x[0][key]]
 
 
 def curate_junction(ctg, st, en, junc):
@@ -199,282 +149,30 @@ def curate_junction(ctg, st, en, junc):
     return sorted(junc_scores, key=itemgetter(2))
 
 
-def equivalent_seq(genome, contig_len, contig, start, end, strand):
-    from CIRI.preprocess import revcomp
-
-    if strand is None:
-        return 'Unknown'
-
-    ds_seq = ''
-    for i in range(100):
-        if end + i > contig_len[contig]:
-            break
-        if genome[contig][start:start + i] == genome[contig][end:end + i]:
-            ds_seq += genome[contig][start:start + i]
-        else:
-            break
-
-    us_seq = ''
-    for j in range(100):
-        if start - j < 0:
-            break
-        if genome[contig][start - j:start] == genome[contig][end - j:end]:
-            us_seq += genome[contig][start - j:start]
-        else:
-            break
-
-    tmp = us_seq[::-1] + ds_seq
-    if strand == '+':
-        return tmp
-    else:
-        return revcomp(tmp)
-
-
-def annotated_splice_signal(contig, start, end, clip_base, search_length=10, shift_threshold=3):
-    from CIRI.preprocess import revcomp
-    from CIRI.alignment import ss_altered_length, sort_splice_sites
-
-    ds_free = 0
-    for i in range(100):
-        if end + i > CONTIG_LEN[contig]:
-            break
-        if GENOME[contig][start:start + i] == GENOME[contig][end:end + i]:
-            ds_free = i
-        else:
-            break
-
-    us_free = 0
-    for j in range(100):
-        if start - j < 0:
-            break
-        if GENOME[contig][start - j:start] == GENOME[contig][end - j:end]:
-            us_free = j
-        else:
-            break
-
-    if start - search_length - us_free - 2 < 0 or end + search_length + ds_free + 2 > CONTIG_LEN[contig]:
-        return None, us_free, ds_free
-
-    # First: find annotated splice signal
-    if SS_INDEX is not None and contig in SS_INDEX:
-        anno_ss = []
-        for strand in ['+', '-']:
-            # Upstream
-            tmp_us_sites = []
-            for us_shift in range(-search_length, search_length):
-                us_pos = start + us_shift + 1
-                if us_pos not in SS_INDEX[contig]:
-                    continue
-                if strand not in SS_INDEX[contig][us_pos]:
-                    continue
-                if 'start' not in SS_INDEX[contig][us_pos][strand]:
-                    continue
-                tmp_us_sites.append(us_shift)
-
-            for us_shift in range(-search_length, search_length):
-                us_pos = start + us_shift
-                if us_pos not in SS_INDEX[contig]:
-                    continue
-                if strand not in SS_INDEX[contig][us_pos]:
-                    continue
-                if 'end' in SS_INDEX[contig][us_pos][strand]:
-                    tmp_us_sites.append(us_shift)
-
-            # Downstream
-            tmp_ds_sites = []
-            for ds_shift in range(-search_length, search_length):
-                ds_pos = end + ds_shift + 1
-                if ds_pos not in SS_INDEX[contig]:
-                    continue
-                if strand not in SS_INDEX[contig][ds_pos]:
-                    continue
-                if 'start' not in SS_INDEX[contig][ds_pos][strand]:
-                    continue
-                tmp_ds_sites.append(ds_shift)
-
-            for ds_shift in range(-search_length, search_length):
-                ds_pos = end + ds_shift
-                if ds_pos not in SS_INDEX[contig]:
-                    continue
-                if strand not in SS_INDEX[contig][ds_pos]:
-                    continue
-                if 'end' not in SS_INDEX[contig][ds_pos][strand]:
-                    continue
-                tmp_ds_sites.append(ds_shift)
-
-            if len(tmp_us_sites) == 0 or len(tmp_ds_sites) == 0:
-                continue
-
-            for i in tmp_us_sites:
-                for j in tmp_ds_sites:
-                    if abs(i - j) > shift_threshold + clip_base:
-                        continue
-                    us_ss = GENOME[contig][start + i - 2:start + i]
-                    ds_ss = GENOME[contig][end + j:end + j + 2]
-                    if strand == '-':
-                        us_ss, ds_ss = revcomp(ds_ss), revcomp(us_ss)
-                    ss_id = '{}-{}|{}-{}'.format(us_ss, ds_ss, i, j)
-                    ss_weight = SPLICE_SIGNAL[(ds_ss, us_ss)] if (ds_ss, us_ss) in SPLICE_SIGNAL else 3
-
-                    anno_ss.append((
-                        ss_id, strand, i, j, ss_weight, *ss_altered_length(i, j, us_free, ds_free, clip_base)
-                    ))
-
-        if len(anno_ss) > 0:
-            return sort_splice_sites(anno_ss, us_free, ds_free, clip_base), us_free, ds_free
-
-    return None, us_free, ds_free
-
-
-def find_splice_signal(contig, start, end, host_strand, us_free, ds_free, clip_base,
-                       search_length=10, shift_threshold=3, is_canonical=False):
-    from CIRI.preprocess import revcomp
-    from CIRI.alignment import ss_altered_length, sort_splice_sites
-
-    # Second: find GT-AG splice signal
-    us_search_length = search_length + us_free
-    ds_search_length = search_length + ds_free
-    us_seq = GENOME[contig][start - us_search_length - 2:start + ds_search_length]
-    ds_seq = GENOME[contig][end - us_search_length:end + ds_search_length + 2]
-
-    if us_seq is None or len(us_seq) < ds_search_length - us_search_length + 2:
-        return None
-    if ds_seq is None or len(ds_seq) < ds_search_length - us_search_length + 2:
-        return None
-
-    # Same strand
-    prior_ss = []
-    if host_strand:
-        prior_strand = set(list(host_strand))
-        for strand in prior_strand:
-            for (tmp_ds_ss, tmp_us_ss), ss_weight in SPLICE_SIGNAL.items():
-                # Only search canonical GT-AG
-                if is_canonical and ss_weight != 0:
-                    continue
-                if strand == '-':
-                    ds_ss, us_ss = revcomp(tmp_us_ss), revcomp(tmp_ds_ss)
-                else:
-                    ds_ss, us_ss = tmp_ds_ss, tmp_us_ss
-
-                # Find upstream signal
-                tmp_us_start = 0
-                tmp_us_sites = []
-                while 1:
-                    tmp_us = us_seq.find(us_ss, tmp_us_start + 1)
-                    if tmp_us == -1:
-                        break
-                    tmp_us_sites.append(tmp_us)
-                    tmp_us_start = tmp_us
-
-                # Find downstream signal
-                tmp_ds_start = 0
-                tmp_ds_sites = []
-                while 1:
-                    tmp_ds = ds_seq.find(ds_ss, tmp_ds_start + 1)
-                    if tmp_ds == -1:
-                        break
-                    tmp_ds_sites.append(tmp_ds)
-                    tmp_ds_start = tmp_ds
-
-                # Filter paired splice signal in concordance position
-                if len(tmp_us_sites) == 0 or len(tmp_ds_sites) == 0:
-                    continue
-
-                for i in tmp_us_sites:
-                    for j in tmp_ds_sites:
-                        if abs(i - j) > clip_base + shift_threshold:
-                            continue
-                        us_shift = i - us_search_length
-                        ds_shift = j - us_search_length
-                        ss_id = '{}-{}*|{}-{}'.format(tmp_us_ss, tmp_ds_ss, us_shift, ds_shift)
-                        prior_ss.append((
-                            ss_id, strand, us_shift, ds_shift, ss_weight,
-                            *ss_altered_length(us_shift, ds_shift, us_free, ds_free, clip_base)
-                        ))
-
-    if len(prior_ss) > 0:
-        return sort_splice_sites(prior_ss, us_free, ds_free, clip_base)
-
-    # Anti-sense
-    other_ss = []
-    other_strand = {'+', '-'} - set(list(host_strand)) if host_strand else {'+', '-'}
-    if other_strand:
-        for strand in other_strand:
-            for (tmp_ds_ss, tmp_us_ss), ss_weight in SPLICE_SIGNAL.items():
-                if is_canonical and ss_weight != 0:
-                    continue
-                if strand == '-':
-                    ds_ss, us_ss = revcomp(tmp_us_ss), revcomp(tmp_ds_ss)
-                else:
-                    ds_ss, us_ss = tmp_ds_ss, tmp_us_ss
-
-                # Find upstream signal
-                tmp_us_start = 0
-                tmp_us_sites = []
-                while 1:
-                    tmp_us = us_seq.find(us_ss, tmp_us_start + 1)
-                    if tmp_us == -1:
-                        break
-                    tmp_us_sites.append(tmp_us)
-                    tmp_us_start = tmp_us
-
-                # Find downstream signal
-                tmp_ds_start = 0
-                tmp_ds_sites = []
-                while 1:
-                    tmp_ds = ds_seq.find(ds_ss, tmp_ds_start + 1)
-                    if tmp_ds == -1:
-                        break
-                    tmp_ds_sites.append(tmp_ds)
-                    tmp_ds_start = tmp_ds
-
-                # Filter paired splice signal in concordance position
-                if len(tmp_us_sites) == 0 or len(tmp_ds_sites) == 0:
-                    continue
-
-                for i in tmp_us_sites:
-                    for j in tmp_ds_sites:
-                        if abs(i - j) > clip_base + shift_threshold:
-                            continue
-                        us_shift = i - us_search_length
-                        ds_shift = j - us_search_length
-                        ss_id = '{}-{}*|{}-{}'.format(tmp_us_ss, tmp_ds_ss, us_shift, ds_shift)
-                        other_ss.append((
-                            ss_id, strand, us_shift, ds_shift, ss_weight,
-                            *ss_altered_length(us_shift, ds_shift, us_free, ds_free, clip_base)
-                        ))
-
-    if len(other_ss) > 0:
-        return sort_splice_sites(other_ss, us_free, ds_free, clip_base)
-
-    return None
-
-
 def annotated_hit(contig, scores):
-    from CIRI.utils import flatten
-    if contig not in SS_INDEX:
+    if contig not in env.SS_INDEX:
         return None
 
     weighted = []
     for st, en, score in scores:
         w = 0
-        if st + 1 in SS_INDEX[contig]:
-            tmp = set(flatten([p for _, p in SS_INDEX[contig][st + 1].items()]))
+        if st + 1 in env.SS_INDEX[contig]:
+            tmp = set(flatten([p for _, p in env.SS_INDEX[contig][st + 1].items()]))
             if 'start' in tmp:
                 w += 1
-        elif st in SS_INDEX[contig]:
-            tmp = set(flatten([p for _, p in SS_INDEX[contig][st].items()]))
+        elif st in env.SS_INDEX[contig]:
+            tmp = set(flatten([p for _, p in env.SS_INDEX[contig][st].items()]))
             if 'end' in tmp:
                 w += 1
         else:
             pass
 
-        if en in SS_INDEX[contig]:
-            tmp = set(flatten([p for _, p in SS_INDEX[contig][en].items()]))
+        if en in env.SS_INDEX[contig]:
+            tmp = set(flatten([p for _, p in env.SS_INDEX[contig][en].items()]))
             if 'end' in tmp:
                 w += 1
-        elif en + 1 in SS_INDEX[contig]:
-            tmp = set(flatten([p for _, p in SS_INDEX[contig][en + 1].items()]))
+        elif en + 1 in env.SS_INDEX[contig]:
+            tmp = set(flatten([p for _, p in env.SS_INDEX[contig][en + 1].items()]))
             if 'start' in tmp:
                 w += 1
         else:
@@ -510,12 +208,12 @@ def correct_chunk(chunk):
 
         template = transform_seq(ref.seq, max(head_pos))
         ssw = Aligner(template, match=10, mismatch=4, gap_open=8, gap_extend=2)
-        junc_seqs = [junction_seq(template, -max(head_pos)//2, 25), ]
+        junc_seqs = [get_junc_seq(template, -max(head_pos)//2, 25), ]
 
         for query in cluster[1:]:
             alignment = ssw.align(query.seq)
             tmp = transform_seq(query.seq, alignment.query_begin)
-            junc_seqs.append(junction_seq(tmp, -max(head_pos)//2, 25))
+            junc_seqs.append(get_junc_seq(tmp, -max(head_pos)//2, 25))
 
         cs_junc = consensus(junc_seqs, alignment_type=2,
                             match=10, mismatch=-4, gap=-8, extension=-2, gap_affine=-24, extension_affine=-1,
@@ -538,19 +236,19 @@ def correct_chunk(chunk):
 
         # Annotated sites
         for shift_threshold in [0, 3]:
-            ss_site, us_free, ds_free = annotated_splice_signal(ctg, circ_start, circ_end, 0, 5, shift_threshold)
+            ss_site, us_free, ds_free = find_annotated_signal(ctg, circ_start, circ_end, 0, 5, shift_threshold)
             if ss_site is not None:
                 ss_id, strand, us_shift, ds_shift = ss_site
                 circ_start += us_shift
                 circ_end += ds_shift
                 break
 
-        host_strand = transcript_strand(ctg, circ_start, circ_end)
+        host_strand = find_host_gene(ctg, circ_start, circ_end)
 
         # Canonical sites
         if ss_site is None:
             for shift_threshold in [0, 3]:
-                ss_site = find_splice_signal(ctg, circ_start, circ_end, host_strand, us_free, ds_free,
+                ss_site = find_denovo_signal(ctg, circ_start, circ_end, host_strand, us_free, ds_free,
                                              0, 5, shift_threshold, True)
                 if ss_site is not None:
                     ss_id, strand, us_shift, ds_shift = ss_site
@@ -602,7 +300,7 @@ def correct_chunk(chunk):
 
             # Find denovo splice signal
             if is_lariat == 0:
-                ss_site = find_splice_signal(ctg, circ_start, circ_end, host_strand, us_free, ds_free,
+                ss_site = find_denovo_signal(ctg, circ_start, circ_end, host_strand, us_free, ds_free,
                                              5, 10, 3, False)
                 if ss_site is not None:
                     ss_id, strand, us_shift, ds_shift = ss_site
@@ -632,9 +330,9 @@ def correct_chunk(chunk):
 
 def recursive_splice_site(scores, ctg, strand):
     for st, en, scr in scores:
-        if strand == '+' and (GENOME[ctg][st-2:st] == 'AG' and GENOME[ctg][st:st+2] == 'GT'):
+        if strand == '+' and (env.GENOME.seq(ctg, st-2, st) == 'AG' and env.GENOME.seq(ctg, st, st+2) == 'GT'):
             return st, en, scr
-        if strand == '-' and (GENOME[ctg][en:en+2] == 'CT' and GENOME[ctg][en-2:en] == 'CA'):
+        if strand == '-' and (env.GENOME.seq(ctg, en, en+2) == 'CT' and env.GENOME.seq(ctg, en-2, en) == 'CA'):
             return st, en, scr
     return None, None, None
 
@@ -666,79 +364,13 @@ def recursive_splice_site(scores, ctg, strand):
 #     return nearby_st, nearby_en
 
 
-def transcript_strand(ctg, start, end):
-    if ctg not in GTF_INDEX:
-        return None
-    start_div, end_div = start // 500, end // 500
-
-    host_gene = {}
-    for x in range(start_div, end_div + 1):
-        if x not in GTF_INDEX[ctg]:
-            continue
-        for element in GTF_INDEX[ctg][x]:
-            # start site
-            if element.end < start or element.start > end:
-                continue
-            if element.start - 500 <= start <= element.end + 500 or element.start - 500 <= end <= element.end + 500:
-                host_gene.setdefault(element.strand, []).append(element)
-
-    if host_gene:
-        return host_gene
-    else:
-        return None
-
-
-def find_retained_introns(ctg, start, end):
-    if ctg not in INTRON_INDEX:
-        return None
-    start_div, end_div = start // 500, end // 500
-
-    host_gene = {}
-    for x in range(start_div, end_div + 1):
-        if x not in INTRON_INDEX[ctg]:
-            continue
-        for st, en, strand in INTRON_INDEX[ctg][x]:
-            if st - 25 <= start and end <= en + 25:
-                host_gene.setdefault(strand, []).append((st, en, strand))
-
-    if host_gene:
-        return host_gene
-    else:
-        return None
-
-
-def find_overlap_exons(ctg, start, end):
-    if ctg not in GTF_INDEX:
-        return None
-    start_div, end_div = start // 500, end // 500
-
-    host_gene = {}
-    for x in range(start_div, end_div + 1):
-        if x not in GTF_INDEX[ctg]:
-            continue
-        for element in GTF_INDEX[ctg][x]:
-            if element.type != 'exon':
-                continue
-            if element.end - 25 < start or end < element.start + 25:
-                continue
-            host_gene.setdefault(element.strand, []).append((element.start, element.end, element.strand))
-
-    if host_gene:
-        return host_gene
-    else:
-        return None
-
-
 def correct_reads(reads_cluster, ref_fasta, gtf_index, intron_index, ss_index, threads):
-    from CIRI.alignment import Faidx
-    faidx = Faidx(ref_fasta)
-    contig_len = faidx.contig_len
-    genome = {ctg: faidx.seq(ctg, 0, size) for ctg, size in contig_len.items()}
-    faidx.close()
+    # Load reference genome
+    genome = Fasta(ref_fasta)
 
     corrected_reads = []
     jobs = []
-    pool = Pool(threads, initializer, (contig_len, genome, gtf_index, intron_index, ss_index, ))
+    pool = Pool(threads, env.initializer, (None, genome.contig_len, genome, gtf_index, intron_index, ss_index, ))
     for cluster in grouper(reads_cluster, 250):
         jobs.append(pool.apply_async(correct_chunk, (cluster,)))
     pool.close()
@@ -756,9 +388,8 @@ def correct_reads(reads_cluster, ref_fasta, gtf_index, intron_index, ss_index, t
         prog.update(100 * cnt // len(jobs))
     pool.join()
     prog.update(100)
-    print(circ_num)
 
-    return corrected_reads
+    return circ_num, corrected_reads
 
 
 def circ_pos(x):
@@ -789,11 +420,8 @@ def by_circ(x):
 
 def cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix):
     from collections import Counter
-    from CIRI.alignment import Faidx
-    faidx = Faidx(ref_fasta)
-    contig_len = faidx.contig_len
-    genome = {ctg: faidx.seq(ctg, 0, size) for ctg, size in contig_len.items()}
-    faidx.close()
+
+    genome = Fasta(ref_fasta)
 
     circ_reads = defaultdict(list)
     circ_info = {}
@@ -807,7 +435,7 @@ def cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix
         tmp_attr = 'circ_id "{}"; splice_site "{}"; equivalent_seq "{}"; circ_type "{}";'.format(
             circ_id,
             ss_id,
-            equivalent_seq(genome, contig_len, ctg, st, en, strand),
+            equivalent_seq(genome, ctg, st, en, strand),
             field['circ_type'] if field else 'Unknown',
         )
         for key in 'gene_id', 'gene_name', 'gene_type':
@@ -844,6 +472,35 @@ def cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix
     exp_df.to_csv('{}/{}.expression'.format(out_dir, prefix), sep="\t", index_label='circ_ID')
 
     return len(sorted_circ)
+
+
+def equivalent_seq(genome, contig, start, end, strand):
+    if strand is None:
+        return 'Unknown'
+
+    ds_seq = ''
+    for i in range(100):
+        if end + i > genome.contig_len[contig]:
+            break
+        if genome.seq(contig, start, start + i) == genome.seq(contig, end, end + i):
+            ds_seq += genome.seq(contig, start, start + i)
+        else:
+            break
+
+    us_seq = ''
+    for j in range(100):
+        if start - j < 0:
+            break
+        if genome.seq(contig, start - j, start) == genome.seq(contig, end - j, end):
+            us_seq += genome.seq(contig, start - j, start)
+        else:
+            break
+
+    tmp = us_seq[::-1] + ds_seq
+    if strand == '+':
+        return tmp
+    else:
+        return revcomp(tmp)
 
 
 def circ_attr(gtf_index, ctg, start, end, strand):
@@ -966,193 +623,3 @@ def circ_attr(gtf_index, ctg, start, end, strand):
         pass
 
     return field
-
-
-# def scan_corrected_chunk(chunk):
-#     from CIRI import alignment
-#     from CIRI.preprocess import revcomp
-#
-#     ret = []
-#     short_reads = []
-#     for reads, ccs in chunk:
-#         ccs_hit = alignment.get_primary_alignment(alignment.ALIGNER.map(ccs * 2))
-#         if ccs_hit is None and len(ccs) < 150:
-#             short_reads.append((reads, ccs))
-#             continue
-#
-#         # Find back-spliced junction site
-#         circ, junc = alignment.find_bsj(ccs)
-#         if circ is None:
-#             continue
-#
-#         # Candidate alignment situation, more than 85%
-#         circ_hit = alignment.get_primary_alignment(alignment.ALIGNER.map(circ))
-#         if circ_hit is None or circ_hit.mlen < 0.75 * len(circ):
-#             continue
-#
-#         clipped_circ, circ_start, circ_end, clip_info = alignment.align_clip_segments(circ, circ_hit)
-#         if circ_start is None or circ_end is None:
-#             continue
-#
-#         clip_base = clip_info[2]
-#         if clip_base > 0.15 * len(ccs):
-#             continue
-#
-#         # Retrive circRNA positions, convert minimap2 position to real position
-#         ss_site, us_free, ds_free = alignment.search_splice_signal(circ_hit.ctg, circ_start, circ_end, clip_base, clip_base + 10)
-#         if ss_site is None:
-#             circ_id = '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end)
-#             circ_seq = circ if circ_hit.strand > 0 else revcomp(circ)
-#             ret.append([reads, circ_id, circ_seq, 'Unknown'])
-#             continue
-#
-#         ss_id, strand, us_shift, ds_shift = ss_site
-#         circ_start += us_shift
-#         circ_end += ds_shift
-#
-#         # if is_canonical: keep canonical splice site only
-#         ss = ss_id.split('|')[0]
-#         # if is_canonical and ss[-1] == '*' and ss != 'AG-GT*':
-#         #     continue
-#
-#         circ_id = '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end)
-#
-#         # BSJ correction for 5' prime region
-#         correction_shift = min(max(us_shift, us_free), ds_free)
-#         circ_seq = clipped_circ if circ_hit.strand > 0 else revcomp(clipped_circ)
-#         circ_seq = circ_seq[correction_shift:] + circ_seq[:correction_shift]
-#
-#         ret.append([reads, circ_id, circ_seq, ss_id])
-#
-#     return ret, short_reads
-#
-#
-# def scan_corrected_reads(corrected_reads, ref_fasta, ss_index, threads):
-#     import mappy as mp
-#     from CIRI import alignment
-#
-#     faidx = alignment.Faidx(ref_fasta)
-#     contig_len = faidx.contig_len
-#     faidx.close()
-#
-#     # First scanning using minimap2
-#     minimap_aligner = mp.Aligner(ref_fasta, n_threads=threads, preset='splice')
-#
-#     chunk_size = 250
-#     jobs = []
-#     pool = Pool(threads, alignment.initializer, (minimap_aligner, minimap_aligner, ss_index, contig_len))
-#     for reads in grouper(corrected_reads, chunk_size):
-#         chunk = [i for i in reads if i is not None]
-#         jobs.append(pool.apply_async(scan_corrected_chunk, (chunk, )))
-#     pool.close()
-#
-#     prog = ProgressBar()
-#     cnt = 0
-#
-#     corrected_circ = []
-#     short_reads = []
-#     for job in jobs:
-#         tmp_res, tmp_short = job.get()
-#         corrected_circ += tmp_res
-#         short_reads += tmp_short
-#         cnt += 1
-#         prog.update(100 * cnt // len(jobs))
-#     pool.join()
-#     prog.update(100)
-#
-#     return corrected_circ, short_reads
-#
-#
-# def recover_corrected_chunk(chunk):
-#     from CIRI import alignment
-#     from CIRI.preprocess import revcomp
-#
-#     ret = []
-#
-#     for reads, ccs in chunk:
-#         ccs_hit = alignment.get_primary_alignment(alignment.ALIGNER.map(ccs * 2))
-#         if ccs_hit is None:
-#             continue
-#
-#         # Find back-spliced junction site
-#         circ, junc = alignment.find_bsj(ccs)
-#
-#         # Candidate alignment situation, more than 85%
-#         circ_hit = alignment.get_primary_alignment(alignment.ALIGNER.map(circ))
-#         if circ_hit is None:
-#             continue
-#
-#         clipped_circ, circ_start, circ_end, clip_info = alignment.align_clip_segments(circ, circ_hit)
-#         if circ_start is None or circ_end is None:
-#             continue
-#
-#         clip_base = clip_info[2]
-#         if clip_base > 0.15 * len(ccs):
-#             continue
-#
-#         # Retrive circRNA positions, convert minimap2 position to real position
-#         ss_site, us_free, ds_free = alignment.search_splice_signal(circ_hit.ctg, circ_start, circ_end, clip_base, clip_base + 10)
-#         if ss_site is None:
-#             circ_id = '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end)
-#             circ_seq = circ if circ_hit.strand > 0 else revcomp(circ)
-#             ret.append([reads, circ_id, circ_seq, 'Unknown'])
-#             continue
-#
-#         ss_id, strand, us_shift, ds_shift = ss_site
-#         circ_start += us_shift
-#         circ_end += ds_shift
-#
-#         # if is_canonical: keep canonical splice site only
-#         ss = ss_id.split('|')[0]
-#         # if is_canonical and ss[-1] == '*' and ss != 'AG-GT*':
-#         #     continue
-#
-#         circ_id = '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end)
-#
-#         # BSJ correction for 5' prime region
-#         correction_shift = min(max(us_shift, us_free), ds_free)
-#         circ_seq = clipped_circ if circ_hit.strand > 0 else revcomp(clipped_circ)
-#         circ_seq = circ_seq[correction_shift:] + circ_seq[:correction_shift]
-#
-#         ret.append([reads, circ_id, circ_seq, ss_id])
-#
-#     return ret
-#
-#
-# def recover_corrected_reads(short_reads, ref_fasta, ss_index):
-#     from bwapy import BwaAligner
-#     from CIRI import alignment
-#
-#     # Second scanning of short reads
-#     faidx = alignment.Faidx(ref_fasta)
-#     contig_len = faidx.contig_len
-#
-#     options = '-x ont2d -T 19'
-#     bwa_aligner = alignment.Aligner(BwaAligner(ref_fasta, options=options))
-#
-#     chunk_size = 250
-#     jobs = []
-#     pool = Pool(1, alignment.initializer, (bwa_aligner, faidx, ss_index, contig_len))
-#     for reads in grouper(short_reads, chunk_size):
-#         chunk = [i for i in reads if i is not None]
-#         jobs.append(pool.apply_async(recover_corrected_chunk, (chunk, )))
-#     pool.close()
-#
-#     prog = ProgressBar()
-#     prog.update(0)
-#     cnt = 0
-#
-#     corrected_circ = []
-#     for job in jobs:
-#         tmp_ret = job.get()
-#         corrected_circ += tmp_ret
-#         cnt += 1
-#         prog.update(100 * cnt / len(jobs))
-#
-#     pool.join()
-#     prog.update(100)
-#
-#     faidx.close()
-#
-#     return corrected_circ
-#

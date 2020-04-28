@@ -9,9 +9,9 @@ from collections import defaultdict
 def call(args):
     from CIRI.logger import get_logger
     from CIRI.utils import check_file, check_dir
-    from CIRI.rofinder import find_ccs_reads, load_ccs_reads
-    from CIRI.alignment import index_annotation, scan_ccs_reads, recover_ccs_reads
-    from CIRI.alignment import scan_raw_reads
+    from CIRI.find_ccs import find_ccs_reads, load_ccs_reads
+    from CIRI.find_bsj import index_annotation, scan_ccs_reads, recover_ccs_reads
+    from CIRI.find_bsj import scan_raw_reads
 
     if args.input is None or args.output is None:
         sys.exit('Please provide input and output file, run CIRI-long using -h or --help for detailed information.')
@@ -69,19 +69,19 @@ def call(args):
 
     # Find circRNAs
     logger.info('Step 2.1 - Find circRNAs from CCS reads')
-    tmp_cnt, short_seq = scan_ccs_reads(ccs_seq, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
+    tmp_cnt, short_seq = scan_ccs_reads(ccs_seq, ref_fasta, ss_idx, gtf_idx, intron_idx, is_canonical, out_dir, prefix, threads)
     for key, value in tmp_cnt.items():
         reads_count[key] += value
 
     # Recover short reads
     logger.info('Step 2.2 - Recover short CCS reads')
-    tmp_cnt = recover_ccs_reads(short_seq, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
+    tmp_cnt = recover_ccs_reads(short_seq, ref_fasta, ss_idx, gtf_idx, intron_idx, is_canonical, out_dir, prefix, threads)
     for key, value in tmp_cnt.items():
         reads_count[key] += value
 
     # Find BSJs
     logger.info('Step 3 - Find circRNAs with partial structure')
-    tmp_cnt, short_seq = scan_raw_reads(in_file, ref_fasta, ss_idx, is_canonical, out_dir, prefix, threads)
+    tmp_cnt, short_seq = scan_raw_reads(in_file, ref_fasta, gtf_idx, intron_idx, ss_idx, is_canonical, out_dir, prefix, threads)
     for key, value in tmp_cnt.items():
         reads_count[key] += value
 
@@ -100,7 +100,7 @@ def call(args):
 def collapse(args):
     from CIRI.logger import get_logger
     from CIRI.utils import check_file, check_dir
-    from CIRI.alignment import index_annotation
+    from CIRI.find_bsj import index_annotation
     from CIRI import collapse
 
     if args.input is None or args.output is None:
@@ -148,7 +148,7 @@ def collapse(args):
     if not debugging and os.path.exists(corrected_file):
         logger.info('Step 1 - Loading clustered circular reads in previous run')
         with open(corrected_file, 'rb') as pkl:
-            corrected_reads = pickle.load(pkl)
+            circ_num, corrected_reads = pickle.load(pkl)
     else:
         logger.info('Step 1 - Clustering candidate circular reads')
         # Cluster reads
@@ -156,10 +156,12 @@ def collapse(args):
         logger.info('Circular reads clusters: {}'.format(len(reads_cluster)))
 
         # Generate consensus reads
-        corrected_reads = collapse.correct_reads(reads_cluster, ref_fasta, gtf_idx, intron_idx, ss_idx, threads)
+        circ_num, corrected_reads = collapse.correct_reads(reads_cluster, ref_fasta, gtf_idx, intron_idx, ss_idx, threads)
         with open(corrected_file, 'wb') as pkl:
-            pickle.dump(corrected_reads, pkl, -1)
-        logger.info('Corrected clusters: {}'.format(len(corrected_reads)))
+            pickle.dump([circ_num, corrected_reads], pkl, -1)
+        logger.info('Corrected clusters: {}, {}/{}/{}/{} annotated/denovo/lariat/unknown'.format(
+            len(corrected_reads), circ_num['Annotated'], circ_num['Denovo signal'],
+            circ_num['High confidence lariat'], circ_num['Unknown signal']))
 
     logger.info('Step 2 - Calculating expression matrix')
     circ_cnt = collapse.cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix)

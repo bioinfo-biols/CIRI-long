@@ -107,3 +107,44 @@ def flatten(x):
 
     flatted_list = list(itertools.chain(*x))
     return flatted_list
+
+
+def min_sorted_items(iters, key, reverse=False):
+    from operator import itemgetter
+    x = sorted(iters, key=itemgetter(key), reverse=reverse)
+    return [i for i in x if i[key] == x[0][key]]
+
+
+def revcomp(seq):
+    trantab = str.maketrans("ATCG", "TAGC")
+    return seq.translate(trantab)[::-1]
+
+
+def transform_seq(seq, bsj):
+    return seq[bsj:] + seq[:bsj]
+
+
+def get_junc_seq(seq, bsj, width=25):
+    st, en = bsj - width, bsj + width
+    if len(seq) <= 2 * width:
+        return seq[bsj-len(seq)//2:] + seq[:bsj-len(seq)//2]
+
+    if st < 0:
+        if en < 0:
+            return seq[st:en]
+        else:
+            return seq[st:] + seq[:en]
+    elif en > len(seq):
+        return seq[st:] + seq[:en-len(seq)]
+    else:
+        return seq[st:en]
+
+
+def shift_base(seq):
+    base = 0
+    for i in seq:
+        if i in 'atcgATGC':
+            break
+        else:
+            base += 1
+    return base
