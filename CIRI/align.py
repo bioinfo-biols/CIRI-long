@@ -358,8 +358,8 @@ def merge_exons(tail_exons, head_exons):
     if head_exons[0][0] < tail_exons[-1][1]:
         return merge_blocks(tail_exons + head_exons)
     else:
-        head_exons[0] = [head_exons[0], head_exons[1], '*-']
-        tail_exons[-1] = [tail_exons[-1][0], tail_exons[-1][0], '-*']
+        head_exons[0] = [head_exons[0][0], head_exons[0][1], '*-']
+        tail_exons[-1] = [tail_exons[-1][0], tail_exons[-1][1], '-*']
         return tail_exons + head_exons
 
 
