@@ -12,7 +12,75 @@ from CIRI.logger import ProgressBar
 
 LOGGER = logging.getLogger('CIRI-long')
 READ = namedtuple('Read', 'read_id circ_id strand cirexon ss clip segments seq sample type')
+CIRC = namedtuple('Circ', 'contig start end strand')
 globals()['Read'] = READ
+globals()['Circ'] = CIRC
+
+
+class Segment(object):
+    def __init__(self, start, end):
+        self.start = start
+        self.end = end
+        self.last = None
+        self.next = None
+
+    def __str__(self):
+        return '{}-{}'.format(self.start, self.end)
+
+
+class Exon(Segment):
+    def __init__(self, start, end, mark):
+        self.start = int(start)
+        self.end = int(end)
+        self.mark = mark
+        self.last = None
+        self.next = None
+
+    @property
+    def is_start(self):
+        return self.last is None
+
+    @property
+    def is_end(self):
+        return self.next is None
+
+    @property
+    def is_start_partial(self):
+        return self.mark == '*-'
+
+    @property
+    def is_end_partial(self):
+        return self.mark == '-*'
+
+    @property
+    def length(self):
+        return self.end - self.start + 1
+
+    def __repr__(self):
+        tmp_st = 'None' if self.is_start else str(self.last)
+        tmp_en = 'None' if self.is_end else str(self.next)
+        return '{}[{}]{}'.format(tmp_st, str(self), tmp_en)
+
+
+class Intron(Segment):
+    def __init__(self, last_exon, next_exon):
+        self.last = last_exon
+        self.next = next_exon
+        self.start = self.last.end
+        self.end = self.next.start
+        last_exon.next = self
+        next_exon.last = self
+
+    def __repr__(self):
+        return '[{}]{}[{}]'.format(str(self.last), str(self), str(self.next))
+
+    def change_sart(self, x):
+        self.last.end = x
+        self.start = x
+
+    def change_end(self, x):
+        self.next.start = x
+        self.end = x
 
 
 def load_cand_circ(in_file):
@@ -195,8 +263,8 @@ def correct_chunk(chunk):
         if len(cluster) <= 1:
             continue
 
-        # if 'e56de0ca-1a61-451c-a7eb-e34b694ddcd5' not in [i.read_id for i in cluster]:
-        #     continue
+        if '7a72595a-5750-4efb-bd9b-c54e306f0284' not in [i.read_id for i in cluster]:
+            continue
 
         ref = cluster[0]
         ssw = Aligner(ref.seq[:50], match=10, mismatch=4, gap_open=8, gap_extend=2)
@@ -235,8 +303,8 @@ def correct_chunk(chunk):
             circ_start, circ_end, circ_score = aval_junc[0]
 
         # Annotated sites
-        for shift_threshold in [0, 3]:
-            ss_site, us_free, ds_free = find_annotated_signal(ctg, circ_start, circ_end, 0, 5, shift_threshold)
+        for shift_threshold in [5, 10]:
+            ss_site, us_free, ds_free = find_annotated_signal(ctg, circ_start, circ_end, 0, 10, shift_threshold)
             if ss_site is not None:
                 ss_id, strand, us_shift, ds_shift = ss_site
                 circ_start += us_shift
@@ -247,9 +315,9 @@ def correct_chunk(chunk):
 
         # Canonical sites
         if ss_site is None:
-            for shift_threshold in [0, 3]:
+            for shift_threshold in [5, 10]:
                 ss_site = find_denovo_signal(ctg, circ_start, circ_end, host_strand, us_free, ds_free,
-                                             0, 5, shift_threshold, True)
+                                             0, 10, shift_threshold, True)
                 if ss_site is not None:
                     ss_id, strand, us_shift, ds_shift = ss_site
                     circ_start += us_shift
@@ -314,6 +382,23 @@ def correct_chunk(chunk):
 
         circ_id = '{}:{}-{}'.format(ctg, circ_start + 1, circ_end)
 
+        cluster_seq = []
+        circ_junc_seq = genome_junction_seq(ctg, circ_start, circ_end)
+        ssw = Aligner(circ_junc_seq, match=10, mismatch=4, gap_open=8, gap_extend=2, report_cigar=True)
+        for query in cluster:
+            alignment = ssw.align(query.seq * 2)
+            tmp_pos = find_alignment_pos(alignment, len(circ_junc_seq)//2) % len(query.seq)
+            if tmp_pos is None:
+                print(alignment.cigar_string)
+            tmp_seq = transform_seq(query.seq, tmp_pos)
+            cluster_seq.append(tmp_seq)
+        # circ = CIRC(ctg, circ_start + 1, circ_end, strand)
+        #
+        # tmp_fasta = sorted([i.seq for i in cluster if i.segments != 'partial'], key=len)
+        # from CIRI.poa import consensus
+        # tmp_consensus = consensus(tmp_fasta, 2, 10, -4, -8, -2, -24, -1, 0)
+        # cir_exons = curate_cirexons(circ, cluster)
+
         # field = circ_attr(GTF_INDEX, ctg, circ_start + 1, circ_end, strand)
         # if field and field['circ_type'] == 'exon' and ss_id == 'lariat':
         #     print(circ_id)
@@ -323,9 +408,48 @@ def correct_chunk(chunk):
         # if nearby_st or nearby_en and field['circ_type'] != 'exon':
         #     print(circ_id)
 
-        cs_cluster.append(([i.read_id for i in cluster], circ_id, strand, ss_id, us_free, ds_free))
+        cs_cluster.append(([i.read_id for i in cluster], cluster_seq, circ_id, strand, ss_id, us_free, ds_free))
 
     return cs_cluster, cnt
+
+
+def find_intron_signal(contig, starts, ends):
+    if env.SS_INDEX is not None and contig in env.SS_INDEX:
+        return None
+
+    for strand in ['+', '-']:
+        tmp_us_sites = []
+        for st in range(min(starts)-10, max(starts)+10):
+            us_pos = st
+            if us_pos not in env.SS_INDEX[contig]:
+                continue
+            if strand not in env.SS_INDEX[contig][us_pos]:
+                continue
+            if 'end' not in env.SS_INDEX[contig][us_pos][strand]:
+                continue
+            tmp_us_sites.append(st)
+
+        tmp_ds_sites = []
+        for en in range(min(ends)-10, max(ends)+10):
+            ds_pos = en
+            if ds_pos not in env.SS_INDEX[contig]:
+                continue
+            if strand not in env.SS_INDEX[contig][ds_pos]:
+                continue
+            if 'start' not in env.SS_INDEX[contig][ds_pos][strand]:
+                continue
+            tmp_ds_sites.append(en)
+
+        if len(tmp_us_sites) == 0 and len(tmp_ds_sites) == 0:
+            continue
+        elif len(tmp_us_sites) > 0 and len(tmp_ds_sites) > 0:
+            pass
+        elif len(tmp_us_sites) > 0:
+            pass
+        elif len(tmp_ds_sites) > 0:
+            pass
+        else:
+            continue
 
 
 def recursive_splice_site(scores, ctg, strand):
@@ -337,31 +461,116 @@ def recursive_splice_site(scores, ctg, strand):
     return None, None, None
 
 
-# def nearby_ss(contig, start, end):
-#     if contig not in SS_INDEX:
-#         return [], []
-#
-#     nearby_st = []
-#     for i in range(50):
-#         if start - i in SS_INDEX[contig]:
-#             nearby_st.append(-i)
-#             break
-#     for i in range(50):
-#         if start + i in SS_INDEX[contig]:
-#             nearby_st.append(+i)
-#             break
-#
-#     nearby_en = []
-#     for i in range(50):
-#         if end + i in SS_INDEX[contig]:
-#             nearby_en.append(i)
-#             break
-#     for i in range(50):
-#         if end - i in SS_INDEX[contig]:
-#             nearby_en.append(-i)
-#             break
-#
-#     return nearby_st, nearby_en
+def curate_cirexons(circ, cluster):
+    cir_introns = defaultdict(list)
+    for read in cluster:
+        if read.cirexon == 'NA':
+            continue
+        if read.type == 'partial':
+            continue
+        exons, introns = parse_cirexons(circ, read)
+        for i in introns:
+            cir_introns[str(i)].append(i)
+
+    if len(cir_introns) == 0:
+        return 1
+
+    # Get all start junction site
+    starts = []
+    ends = []
+    for i in list(cir_introns):
+        st, en = i.split('-')
+        starts.append(int(st))
+        ends.append(int(en))
+    starts = set(starts)
+    ends = set(ends)
+
+    # Cluster junction sites
+    tmp_starts = cluster_bins(starts, dis=10)
+    tmp_ends = cluster_bins(ends, dis=10)
+    combined = [[i, j] for i in tmp_starts for j in tmp_ends]
+
+    # Cluster introns
+    tmp_candidates = []
+    for tmp_st, tmp_en in combined:
+        tmp_ids = [('{}-{}'.format(i, j), intron_splice_sites(circ.contig, i, j, circ.strand)) for i in
+                   tmp_st for j in tmp_en]
+        valid_ids = [i for i in tmp_ids if i[0] in cir_introns]
+        if len(valid_ids) == 0:
+            continue
+        tmp_candidates.append([valid_ids, tmp_st, tmp_en])
+
+    # Greedy algorithm
+    tmp_introns = sorted(tmp_candidates, key=lambda x: sum([len(cir_introns[j]) for j, _ in x[0]]), reverse=True)
+    for valid_ids, tmp_st, tmp_en in tmp_introns:
+        if len(valid_ids) > 1:
+            canonical_ids = [x for x in valid_ids if x[1] == 0]
+            if len(canonical_ids) == 1:
+                final_id = canonical_ids[0]
+            else:
+                print(canonical_ids)
+    return 1
+
+
+def parse_cirexons(circ, read):
+    exon_str = read.cirexon.split(',')
+    exons = []
+    for x in exon_str:
+        st, en = x.split('|')[0].split('-')
+        mark = x.split('|')[1]
+        exons.append(Exon(st, en, mark))
+
+    while exons[0].start != circ.start:
+        if exons[0].end < circ.start:
+            exons = exons[1:]
+        else:
+            exons[0].start = circ.start
+    while exons[-1].end != circ.end:
+        if exons[-1].start > circ.end:
+            exons = exons[:-1]
+        else:
+            exons[-1].end = circ.end
+
+    introns = []
+    for x, y in pairwise(exons):
+        if x.is_end_partial or y.is_start_partial:
+            continue
+        else:
+            intron = Intron(x, y)
+            introns.append(intron)
+
+    return exons, introns
+
+
+def cluster_bins(pos, dis=10):
+    clustered = []
+    last_i = None
+    for i in sorted(pos):
+        if last_i is None:
+            last_i = [i, ]
+            continue
+        if i > last_i[-1] + dis:
+            clustered.append(last_i)
+            last_i = [i, ]
+        else:
+            last_i.append(i)
+    clustered.append(last_i)
+    return clustered
+
+
+def intron_splice_sites(contig, start, end, strand):
+    us = env.GENOME.seq(contig, start, start + 2)
+    ds = env.GENOME.seq(contig, end - 3, end - 1)
+    if strand == '-':
+        us, ds = revcomp(ds), revcomp(us)
+    return signal_weight(us, ds)
+
+
+def signal_weight(us, ds):
+    if us == 'GT' and ds == 'AG':
+        return 0
+    else:
+        return 1
 
 
 def correct_reads(reads_cluster, ref_fasta, gtf_index, intron_index, ss_index, threads):
@@ -427,34 +636,40 @@ def cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix
     circ_info = {}
     reads_df = []
 
-    for reads, circ_id, strand, ss_id, us_free, ds_free in corrected_reads:
-        # circRNA information
-        ctg, st, en = circ_pos(circ_id)
-        field = circ_attr(gtf_idx, ctg, st, en, strand)
+    with open('{}/{}.fa'.format(out_dir, prefix), 'w') as fa:
+        for reads, seqs, circ_id, strand, ss_id, us_free, ds_free in corrected_reads:
+            for tmp_id, tmp_seq in zip(reads, seqs):
+                fa.write('>{}\t{}\t{}\n{}\n'.format(tmp_id, circ_id, strand, tmp_seq))
 
-        tmp_attr = 'circ_id "{}"; splice_site "{}"; equivalent_seq "{}"; circ_type "{}";'.format(
-            circ_id,
-            ss_id,
-            equivalent_seq(genome, ctg, st, en, strand),
-            field['circ_type'] if field else 'Unknown',
-        )
-        for key in 'gene_id', 'gene_name', 'gene_type':
-            if key in field:
-                tmp_attr += ' {} "{}";'.format(key, field[key])
-        circ_info[circ_id] = [ctg, 'CIRI-long', 'circRNA', st, en, len(reads), strand, '.', tmp_attr, ]
+            # circRNA information
+            ctg, st, en = circ_pos(circ_id)
+            field = circ_attr(gtf_idx, ctg, st, en, strand)
 
-        # Expression levels
-        circ_reads[circ_id] += reads
+            tmp_attr = 'circ_id "{}"; splice_site "{}"; equivalent_seq "{}"; circ_type "{}";'.format(
+                circ_id,
+                ss_id,
+                equivalent_seq(genome, ctg, st, en, strand),
+                field['circ_type'] if field else 'Unknown',
+            )
+            for key in 'gene_id', 'gene_name', 'gene_type':
+                if key in field:
+                    tmp_attr += ' {} "{}";'.format(key, field[key])
+            circ_info[circ_id] = [ctg, 'CIRI-long', 'circRNA', st, en, len(reads), strand, '.', tmp_attr, ]
 
-        # Corrected reads
-        for read_id in reads:
-            read = cand_reads[read_id]
-            tmp = [read_id, read.circ_id, read.strand, read.ss, read.clip, read.segments, read.sample, circ_id]
-            reads_df.append(tmp)
+            # Expression levels
+            circ_reads[circ_id] += reads
+
+            # Corrected reads
+            for read_id in reads:
+                read = cand_reads[read_id]
+                tmp = [read_id, circ_id, read.circ_id, read.strand, read.cirexon,
+                       read.ss, read.clip, read.segments, read.sample, read.type]
+                reads_df.append(tmp)
 
     # circular reads
     reads_df = pd.DataFrame(
-        reads_df, columns=['read_id', 'circ_id', 'strand', 'signal', 'alignment', 'segments', 'sample', 'corrected'])
+        reads_df, columns=['read_id', 'circ_id', 'tmp_id', 'strand', 'cirexons',
+                           'signal', 'alignment', 'segments', 'sample', 'type'])
     reads_df.to_csv('{}/{}.reads'.format(out_dir, prefix), sep="\t", index=False)
 
     # circRNA information

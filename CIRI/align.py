@@ -301,7 +301,7 @@ def get_blocks(hit):
 
 def get_exons(hit):
     r_start, r_end = hit.r_st, hit.r_st
-    q_start, q_end = hit.q_st, hit.q_en
+    q_start, q_end = hit.q_st, hit.q_st
     r_block = []
     for length, operation in hit.cigar:
         if operation == 0:
@@ -331,8 +331,10 @@ def get_parital_blocks(hit, junc):
     exons = get_exons(hit)
     blocks = []
     for r_st, r_en, q_st, q_en in exons:
-        if abs(q_st - junc) <= 10 and abs(q_en - junc) <= 10:
-            blocks.append([r_st, r_en, '*'])
+        if abs(q_st - junc) <= 10:
+            blocks.append([r_st, r_en, '*-'])
+        elif abs(q_en - junc) <= 10:
+            blocks.append([r_st, r_en, '-*'])
         else:
             blocks.append([r_st, r_en, r_en - r_st + 1])
     return blocks
@@ -738,3 +740,27 @@ def find_overlap_exons(ctg, start, end):
         return host_gene
     else:
         return None
+
+
+def convert_cigar_string(x):
+    return [(int(l), OPERATION[op]) for l, op in re.findall(r'(\d+)([MIDNSHP=X])', x)]
+
+
+def find_alignment_pos(alignment, pos):
+    r_st, r_en = alignment.ref_begin, alignment.ref_begin
+    q_st, q_en = alignment.query_begin, alignment.query_begin
+    for l, op in convert_cigar_string(alignment.cigar_string):
+        if op == 0:
+            r_en += l
+            q_en += l
+        elif op == 1:
+            q_en += l
+        elif op in [2, ]:
+            r_en += l
+        elif op in [4, 5]:
+            pass
+        if r_st <= pos <= r_en:
+            return q_st + pos - r_st
+        r_st = r_en
+        q_st = q_en
+    return None

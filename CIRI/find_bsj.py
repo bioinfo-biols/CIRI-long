@@ -290,16 +290,15 @@ def scan_ccs_chunk(chunk, is_canonical):
                                          us_free, ds_free, clip_base, clip_base + 10, 3, True)
 
         if ss_site is None:
-            ret.append((
-                read_id, '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end),
-                'NA', 'NA', 'NA', '{}|{}-{}'.format(junc, clip_base, len(ccs)), segments,
-                clipped_circ if circ_hit.strand > 0 else revcomp(clipped_circ)
-            ))
-            continue
-
-        ss_id, strand, us_shift, ds_shift = ss_site
-        circ_start += us_shift
-        circ_end += ds_shift
+            ss_id = 'NA'
+            strand = 'NA'
+            correction_shift = 0
+        else:
+            reads_cnt['signal'] += 1
+            ss_id, strand, us_shift, ds_shift = ss_site
+            circ_start += us_shift
+            circ_end += ds_shift
+            correction_shift = min(max(us_shift, us_free), ds_free)
 
         circ_id = '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end)
 
@@ -315,7 +314,6 @@ def scan_ccs_chunk(chunk, is_canonical):
             cir_exon_tag.append('{}-{}|{}'.format(cir_exon_start + 1, cir_exon_end, cir_exon_length))
 
         # BSJ correction for 5' prime region
-        correction_shift = min(max(us_shift, us_free), ds_free)
         circ_seq = clipped_circ if circ_hit.strand > 0 else revcomp(clipped_circ)
         circ_seq = circ_seq[correction_shift:] + circ_seq[:correction_shift]
 
@@ -323,7 +321,6 @@ def scan_ccs_chunk(chunk, is_canonical):
             read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id,
             '{}|{}-{}'.format(junc, clip_base, len(circ)), segments, circ_seq
         ))
-        reads_cnt['signal'] += 1
 
     return reads_cnt, short_reads, ret
 
@@ -416,21 +413,15 @@ def recover_ccs_chunk(chunk, is_canonical):
                                          us_free, ds_free, clip_base, clip_base + 10, 3, True)
 
         if ss_site is None:
-            ret.append((
-                read_id, '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end),
-                'NA', 'NA', 'NA', '{}|{}-{}'.format(junc, clip_base, len(ccs)), segments,
-                clipped_circ if circ_hit.strand > 0 else revcomp(clipped_circ)
-            ))
-            continue
-
-        ss_id, strand, us_shift, ds_shift = ss_site
-        circ_start += us_shift
-        circ_end += ds_shift
-
-        # if is_canonical: keep canonical splice site only
-        ss = ss_id.split('|')[0]
-        # if is_canonical and ss[-1] == '*' and ss != 'AG-GT*':
-        #     continue
+            ss_id = 'NA'
+            strand = 'NA'
+            correction_shift = 0
+        else:
+            reads_cnt['signal'] += 1
+            ss_id, strand, us_shift, ds_shift = ss_site
+            circ_start += us_shift
+            circ_end += ds_shift
+            correction_shift = min(max(us_shift, us_free), ds_free)
 
         circ_id = '{}:{}-{}'.format(circ_hit.ctg, circ_start + 1, circ_end)
 
@@ -446,7 +437,6 @@ def recover_ccs_chunk(chunk, is_canonical):
             cir_exon_tag.append('{}-{}|{}'.format(cir_exon_start + 1, cir_exon_end, cir_exon_length))
 
         # BSJ correction for 5' prime region
-        correction_shift = min(max(us_shift, us_free), ds_free)
         circ_seq = clipped_circ if circ_hit.strand > 0 else revcomp(clipped_circ)
         circ_seq = circ_seq[correction_shift:] + circ_seq[:correction_shift]
 
@@ -454,7 +444,6 @@ def recover_ccs_chunk(chunk, is_canonical):
             read_id, circ_id, strand, ','.join(cir_exon_tag), ss_id,
             '{}|{}-{}'.format(junc, clip_base, len(circ)), segments, circ_seq
         ))
-        reads_cnt['signal'] += 1
 
     return reads_cnt, ret
 
@@ -516,6 +505,9 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
     short_reads = []
 
     for read_id, seq in chunk:
+        if read_id not in ['85cb95eb-8a6d-4de1-ab44-911e60b90041']:
+            continue
+
         if read_id in circ_reads:
             continue
 
@@ -601,22 +593,14 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
                                          us_free, ds_free, clip_base, clip_base + 10, 3, True)
 
         if ss_site is None:
-            if not is_canonical:
-                ret.append((
-                    read_id, '{}:{}-{}'.format(circ_ctg, circ_start + 1, circ_end),
-                    'NA', 'NA', 'NA', '{}|{}-NA'.format(junc, clip_base), 'partial',
-                    circ if circ_strand > 0 else revcomp(circ)
-                ))
-            continue
-
-        ss_id, strand, us_shift, ds_shift = ss_site
-        circ_start += us_shift
-        circ_end += ds_shift
-
-        # if is_canonical: keep canonical splice site only
-        ss = ss_id.split('|')[0]
-        # if ss_site is None or (is_canonical and ss[-1] == '*' and ss != 'AG-GT*'):
-        #     continue
+            strand = 'NA'
+            ss_id = 'NA'
+            correction_shift = 0
+        else:
+            ss_id, strand, us_shift, ds_shift = ss_site
+            circ_start += us_shift
+            circ_end += ds_shift
+            correction_shift = min(max(us_shift, -us_free), ds_free)
 
         circ_id = '{}:{}-{}'.format(circ_ctg, circ_start + 1, circ_end)
         cir_exons[0][0] = circ_start
@@ -626,7 +610,6 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
         for cir_exon_start, cir_exon_end, cir_exon_len in cir_exons:
             cir_exon_tag.append('{}-{}|{}'.format(cir_exon_start, cir_exon_end, cir_exon_len))
 
-        correction_shift = min(max(us_shift, -us_free), ds_free)
         circ_seq = circ if circ_strand > 0 else revcomp(circ)
         circ_seq = circ_seq[correction_shift:] + circ_seq[:correction_shift]
 

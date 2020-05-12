@@ -340,7 +340,7 @@ class PyAlignRes(object):
         # Cigar Information if CIGAR string if require and available
         cigar_len = Res.contents.cigarLen
         if report_cigar and cigar_len > 0:
-            self.cigar_string = self._cigar_string (Res.contents.cigar, cigar_len, query_len)
+            self.cigar_string = self._cigar_string(Res.contents.cigar, cigar_len, query_len)
         else:
             self.cigar_string = None
 
@@ -364,6 +364,8 @@ class PyAlignRes(object):
         for i in range(cigar_len):
             op_len = self.cigar_int_to_len(cigar[i])
             op_char = self.cigar_int_to_op(cigar[i])
+            if isinstance(op_char, bytes):
+                op_char = op_char.decode()
             cigar_string += '{}{}'.format(op_len, op_char)
 
         # If the lenght of bases aligned is shorter than the overall query length
