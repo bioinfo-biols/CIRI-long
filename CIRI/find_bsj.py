@@ -505,9 +505,6 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
     short_reads = []
 
     for read_id, seq in chunk:
-        if read_id not in ['85cb95eb-8a6d-4de1-ab44-911e60b90041']:
-            continue
-
         if read_id in circ_reads:
             continue
 
