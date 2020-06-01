@@ -232,7 +232,8 @@ def correct_chunk(chunk):
 
         head_pos = []
         for query in cluster[1:]:
-            alignment = ssw.align(query.seq[:50])
+            query_seq = revcomp(query.seq) if query.strand != ref.strand else query.seq
+            alignment = ssw.align(query_seq)
             head_pos.append(alignment.ref_begin)
 
         template = transform_seq(ref.seq, max(head_pos))
@@ -240,8 +241,9 @@ def correct_chunk(chunk):
         junc_seqs = [get_junc_seq(template, -max(head_pos)//2, 25), ]
 
         for query in cluster[1:]:
-            alignment = ssw.align(query.seq)
-            tmp = transform_seq(query.seq, alignment.query_begin)
+            query_seq = revcomp(query.seq) if query.strand != ref.strand else query.seq
+            alignment = ssw.align(query_seq)
+            tmp = transform_seq(query_seq, alignment.query_begin)
             junc_seqs.append(get_junc_seq(tmp, -max(head_pos)//2, 25))
 
         cs_junc = consensus(junc_seqs, alignment_type=2,
@@ -347,47 +349,21 @@ def correct_chunk(chunk):
         circ_junc_seq = genome_junction_seq(ctg, circ_start, circ_end)
         ssw = Aligner(circ_junc_seq, match=10, mismatch=4, gap_open=8, gap_extend=2, report_cigar=True)
         for query in cluster:
-            # if query.type != 'full':
-            #     continue
-            alignment = ssw.align(query.seq * 2)
-            tmp_pos = find_alignment_pos(alignment, len(circ_junc_seq)//2) % len(query.seq)
+            if query.type != 'full':
+                continue
+            query_seq = revcomp(query.seq) if query.strand != strand else query.seq
+            alignment = ssw.align(query_seq * 2)
+            tmp_pos = find_alignment_pos(alignment, len(circ_junc_seq)//2) % len(query_seq)
             if tmp_pos is None:
-                cluster_seq.append(query.seq)
+                cluster_seq.append((query.read_id, query_seq))
             else:
-                tmp_seq = transform_seq(query.seq, tmp_pos)
-                cluster_seq.append(tmp_seq)
+                tmp_seq = transform_seq(query_seq, tmp_pos)
+                cluster_seq.append((query.read_id, tmp_seq))
+        cluster_res = batch_cluster_sequence(circ_id, cluster_seq)
 
         circ = CIRC(ctg, circ_start + 1, circ_end, strand)
 
-        # Cluster sequence
-        # seq_freq = [(i.seq, 1) for i in cluster if i.type == 'full']
-        # seq_cluster = cluster_sequence(seq_freq)
-        #
-        # n_iter = 0
-        # while 1:
-        #     n_cluster = cluster_sequence(seq_cluster)
-        #     if len(n_cluster) == len(seq_cluster):
-        #         break
-        #     seq_cluster = n_cluster
-        #     n_iter += 1
-        #     if n_iter >= 10:
-        #         LOGGER.warn('Sequence not consensus for circRNA: {}'.format(circ_id))
-        #         break
-
-        isoforms, circ_len = curate_cirexons(circ, cluster)
-
-        # tmp_fasta = sorted([i.seq for i in cluster if i.segments != 'partial'], key=len)
-        # from CIRI.poa import consensus
-        # tmp_consensus = consensus(tmp_fasta, 2, 10, -4, -8, -2, -24, -1, 0)
-
-        # field = circ_attr(GTF_INDEX, ctg, circ_start + 1, circ_end, strand)
-        # if field and field['circ_type'] == 'exon' and ss_id == 'lariat':
-        #     print(circ_id)
-        # host_gene = transcript_strand(GTF_INDEX, ctg, circ_start + 1, circ_end)
-        # field = circ_attr(GTF_INDEX, ctg, circ_start + 1, circ_end, strand)
-        # nearby_st, nearby_en = nearby_ss(ctg, circ_start, circ_end)
-        # if nearby_st or nearby_en and field['circ_type'] != 'exon':
-        #     print(circ_id)
+        isoforms, circ_len = curate_cirexons(circ, cluster, cluster_res)
 
         cs_cluster.append(([i.read_id for i in cluster], cluster_seq, circ_id, strand,
                            ss_id, us_free, ds_free, circ_len, isoforms))
@@ -395,47 +371,68 @@ def correct_chunk(chunk):
     return cs_cluster, cnt
 
 
-def batch_cluster_sequence(cluster_seq):
-    reads = [i[0] for i in x]
-    freq = [i[1] for i in x]
+def batch_cluster_sequence(circ_id, x):
+    from CIRI.find_ccs import compress_seq
+    sequence = {}
+    hpc_freq = []
+    for read_id, read_seq in x:
+        sequence[read_id] = read_seq
+        hpc_freq.append((compress_seq(read_seq), [read_id, ]))
 
-    res = []
+    res = iter_cluster_sequence(hpc_freq, sequence)
+
+    # If consensus
     cnt = 0
-    for chunk in grouper(x, 10):
-        tmp = [i for i in chunk if i is not None]
-        res = cluster_sequence(res + tmp)
-        cnt += len(tmp)
-        if sum([i[1] for i in res]) > cnt:
-            print(res)
+    while 1:
+        cnt += 1
+        n_res = cluster_sequence(res, sequence)
+        if len(n_res) == len(res):
+            break
+        res = n_res
+        if cnt >= 10:
+            LOGGER.warn('Sequence not consensus for circRNA: {}'.format(circ_id))
     return res
 
 
-def cluster_sequence(segment_freq):
+def iter_cluster_sequence(hpc_freq, sequence):
+    if len(hpc_freq) <= 50:
+        return cluster_sequence(hpc_freq, sequence)
+
+    res = []
+    for tmp in grouper(hpc_freq, int(len(hpc_freq) / 4) + 1):
+        chunk = [i for i in tmp if i is not None]
+        res = iter_cluster_sequence(chunk + res, sequence)
+        while 1:
+            n_res = cluster_sequence(res, sequence)
+            if len(n_res) == len(res):
+                break
+            res = n_res
+    return res
+
+
+def cluster_sequence(hpc_freq, sequence):
     from scipy.cluster.hierarchy import linkage, leaves_list
     from scipy.spatial.distance import squareform
-    from CIRI.poa import consensus
-    from CIRI.find_ccs import compress_seq
     from Levenshtein import distance
+    from CIRI.poa import consensus
 
-    if len(segment_freq) == 1:
-        return [(segment_freq[0][0], segment_freq[0][1]), ]
-
-    hpc_seq = [compress_seq(i[0]) for i in segment_freq]
+    if len(hpc_freq) == 1:
+        return hpc_freq
 
     # Calculate distance between segments
-    dist = np.zeros((len(segment_freq), len(segment_freq)))
-    for i in range(len(segment_freq)):
-        for j in range(len(segment_freq)):
+    dist = np.zeros((len(hpc_freq), len(hpc_freq)))
+    for i in range(len(hpc_freq)):
+        for j in range(len(hpc_freq)):
             if i > j:
                 continue
-            dist[i][j] = distance(hpc_seq[i], hpc_seq[j]) / max(len(hpc_seq[i]), len(hpc_seq[j]))
-
+            dist[i][j] = distance(hpc_freq[i][0], hpc_freq[j][0]) / max(len(hpc_freq[i][0]), len(hpc_freq[j][0]))
     dist = dist + dist.T
+
     # Hierarchical Cluster
     if dist.sum() != 0:
         z = leaves_list(linkage(squareform(dist), "ward", optimal_ordering=True))
     else:
-        z = list(range(len(segment_freq)))
+        z = list(range(len(hpc_freq)))
 
     clusters = [[z[0], ]]
     for i, j in pairwise(z):
@@ -453,15 +450,15 @@ def cluster_sequence(segment_freq):
     ccs_seq = []
     for cluster in clusters:
         if len(cluster) == 1:
-            ccs_seq.append((segment_freq[cluster[0]]))
+            ccs_seq.append((hpc_freq[cluster[0]]))
             continue
 
-        cluster_seq = [segment_freq[i][0] for i in cluster]
-        cluster_freq = [segment_freq[i][1] for i in cluster]
+        cluster_reads = flatten([hpc_freq[i][1] for i in cluster])
+        cluster_seq = [sequence[i] for i in cluster_reads]
 
         # Generate consensus sequence
         ccs = consensus(cluster_seq, 2, 10, -4, -8, -2, -24, -1, 0)
-        ccs_seq.append((ccs, sum(cluster_freq)))
+        ccs_seq.append((ccs, cluster_reads))
     return ccs_seq
 
 
@@ -513,7 +510,7 @@ def recursive_splice_site(scores, ctg, strand):
     return None, None, None
 
 
-def curate_cirexons(circ, cluster):
+def curate_cirexons(circ, cluster, cluster_res):
     isoforms = {}
     starts = []
     ends = []
@@ -572,7 +569,7 @@ def curate_cirexons(circ, cluster):
         # Canonical sites
         aval_en = []
         for i in set(tmp_en):
-            i_ss = env.GENOME.seq(circ.contig, i, i + 1)
+            i_ss = env.GENOME.seq(circ.contig, i, i + 2)
             if circ.strand == '-' and i_ss == 'AG':
                 aval_en.append(i)
             elif circ.strand == '+' and revcomp(i_ss) == 'GT':
@@ -588,24 +585,85 @@ def curate_cirexons(circ, cluster):
         for i in tmp_en:
             convert_en[i] = final_en
 
-    curated_isoform = []
-    iso_len = {}
+    curated_exons = {}
     for read_id, exons in isoforms.items():
-        tmp_iso = []
-        tmp_len = 0
-        for exon in exons:
-            tmp_st = convert_st[exon.start]
-            tmp_en = convert_en[exon.end]
-            tmp_iso.append('{}-{}'.format(tmp_st, tmp_en))
-            tmp_len += tmp_en - tmp_st + 1
+        curated_exons[read_id] = [Exon(convert_st[exon.start], convert_en[exon.end]) for exon in exons]
 
-        iso_name = ','.join(tmp_iso)
-        curated_isoform.append(iso_name)
-        iso_len[iso_name] = tmp_len
+    final_isoforms = {}
+    for tmp_seq, tmp_ids in cluster_res:
+        tmp_isoform, tmp_len = merge_isoforms(circ, curated_exons, tmp_seq, tmp_ids)
+        if tmp_isoform in final_isoforms:
+            final_isoforms[tmp_isoform][1] += tmp_ids
+        else:
+            final_isoforms[tmp_isoform] = [tmp_len, tmp_ids]
 
-    final_len = iso_len[Counter(curated_isoform).most_common(n=1)[0][0]]
+    ret = sorted(list(final_isoforms),
+                 key=lambda x: (len(final_isoforms[x][1]), final_isoforms[x][0]),
+                 reverse=True)
+    ret_len = final_isoforms[ret[0]][0]
+    return ret, ret_len
 
-    return set(curated_isoform), final_len
+
+def merge_isoforms(circ, curated_exons, seq, ids):
+    from libs.striped_smith_waterman.ssw_wrap import Aligner
+    aligner = Aligner(seq, match=10, mismatch=4, gap_open=8, gap_extend=2)
+
+    exons = sorted(set([str(j) for i in ids for j in curated_exons[i]]))
+    exons = ['st', ] + exons + ['en']
+    edges = np.zeros([len(exons), len(exons)])
+    for i in ids:
+        tmp_exons = [str(j) for j in curated_exons[i]]
+        edges[exons.index('st')][exons.index(tmp_exons[0])] += 1
+        edges[exons.index(tmp_exons[-1])][exons.index('en')] += 1
+
+        for l_exon, n_exon in pairwise(tmp_exons):
+            edges[exons.index(l_exon)][exons.index(n_exon)] += 1
+
+    cand_st, cand_en = np.where(edges == np.amax(edges))
+    cand_score = [exon_score(circ, aligner, exons[i], exons[j]) for i, j in zip(cand_st, cand_en)]
+    cand_idx = np.where(cand_score == np.amax(cand_score))[0][0]
+
+    max_flow = []
+    max_flow += iter_flow(circ, aligner, exons, edges, cand_st[cand_idx], -1)
+    max_flow += iter_flow(circ, aligner, exons, edges, cand_en[cand_idx], 1)
+
+    isoform = [exons[i] for i in max_flow]
+    isoform_id = ','.join([i for i in isoform[1:-1]])
+    isoform_len = sum([int(i.split('-')[1]) - int(i.split('-')[0]) for i in isoform[1:-1]])
+    return isoform_id, isoform_len
+
+
+def iter_flow(circ, aligner, exons, edges, coord, direction=-1):
+    if coord == 0 or coord == edges.shape[0] - 1:
+        return [coord, ]
+
+    if direction == -1:
+        max_l = np.where(edges[:, coord] == np.amax(edges[:, coord]))[0]
+        max_score = [exon_score(circ, aligner, exons[i], exons[coord]) for i in max_l]
+        max_idx = max_l[np.where(max_score == np.amax(max_score))[0][0]]
+        return iter_flow(circ, aligner, exons, edges, max_idx, direction) + [coord, ]
+    else:
+        max_n = np.where(edges[coord] == np.amax(edges[coord]))[0]
+        max_score = [exon_score(circ, aligner, exons[coord], exons[i]) for i in max_n]
+        max_idx = max_n[np.where(max_score == np.amax(max_score))[0][0]]
+        return [coord, ] + iter_flow(circ, aligner, exons, edges, max_idx, direction)
+
+
+def exon_score(circ, aligner, l_exon, n_exon):
+    query_seq = ''
+    if l_exon != 'st':
+        l_st, l_en = l_exon.split('-')
+        tmp = env.GENOME.seq(circ.contig, int(l_st)-1, int(l_en))
+        query_seq += tmp
+    if n_exon != 'en':
+        n_st, n_en = n_exon.split('-')
+        tmp = env.GENOME.seq(circ.contig, int(n_st), int(n_en))
+        query_seq += tmp
+    if circ.strand == '-':
+        query_seq = revcomp(query_seq)
+
+    alignment = aligner.align(query_seq)
+    return alignment.ref_end - alignment.ref_begin
 
 
 def parse_cirexons(circ, read):
