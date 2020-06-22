@@ -224,7 +224,7 @@ def correct_chunk(chunk):
             continue
 
         # LOGGER.warn(cluster[0].read_id)
-        # if 'c73f57ef-7fc4-4bee-ad96-28de54b0e18b' not in [i.read_id for i in cluster]:
+        # if '11ece639-fd56-41c2-b011-5aa85bc2ad16' not in [i.read_id for i in cluster]:
         #     continue
 
         counter = Counter([i.circ_id for i in cluster if i.type == 'full']).most_common(n=1)
@@ -601,9 +601,9 @@ def curate_cirexons(circ, cluster):
         aval_en = []
         for i in set(tmp_en):
             i_ss = env.GENOME.seq(circ.contig, i, i + 2)
-            if circ.strand == '-' and i_ss == 'AG':
+            if circ.strand == '+' and i_ss == 'GT':
                 aval_en.append(i)
-            elif circ.strand == '+' and revcomp(i_ss) == 'GT':
+            elif circ.strand == '-' and revcomp(i_ss) == 'AG':
                 aval_en.append(i)
             else:
                 pass
