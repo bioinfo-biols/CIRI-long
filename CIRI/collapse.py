@@ -165,6 +165,8 @@ def curate_junction(ctg, st, en, junc):
     junc_scores = []
     for i in range(max(0, min(st) - 25), max(st) + 25):
         for j in range(min(en) - 25, min(max(en) + 25, env.CONTIG_LEN[ctg])):
+            if j <= i:
+                continue
             tmp = genome_junction_seq(ctg, i, j, width=10)
             tmp_aligner = Aligner(tmp, match=10, mismatch=4, gap_open=8, gap_extend=2)
             tmp_score = avg_score(tmp_aligner.align(junc), tmp, junc)
@@ -206,6 +208,14 @@ def annotated_hit(contig, scores):
     return min_sorted_items(weighted, 2, True)
 
 
+def junc_score(ctg, junc, junc_seqs):
+    from libs.striped_smith_waterman.ssw_wrap import Aligner
+    aligner = Aligner(env.GENOME.seq(ctg, junc[0], junc[1]) * 2,
+                      match=10, mismatch=4, gap_open=8, gap_extend=2)
+    score = np.mean([aligner.align(i).score for i in junc_seqs])
+    return score
+
+
 def correct_chunk(chunk):
     from random import sample
     from collections import Counter
@@ -224,7 +234,7 @@ def correct_chunk(chunk):
             continue
 
         # LOGGER.warn(cluster[0].read_id)
-        # if '11ece639-fd56-41c2-b011-5aa85bc2ad16' not in [i.read_id for i in cluster]:
+        # if '72d741fb-83c1-4129-9093-1f145da1047c' not in [i.read_id for i in cluster]:
         #     continue
 
         counter = Counter([i.circ_id for i in cluster if i.type == 'full']).most_common(n=1)
@@ -234,13 +244,14 @@ def correct_chunk(chunk):
 
         head_pos = []
         for query in cluster[1:]:
-            if query.strand != ref.strand:
-                if query.strand == 'NA' and ref.strand == '+':
-                    query_seq = query.seq
-                else:
-                    query_seq = revcomp(query.seq)
-            else:
-                query_seq = query.seq
+            # if query.strand != ref.strand:
+            #     if query.strand == 'NA' and ref.strand == '+':
+            #         query_seq = query.seq
+            #     else:
+            #         query_seq = revcomp(query.seq)
+            # else:
+            #     query_seq = query.seq
+            query_seq = query.seq
             alignment = ssw.align(query_seq)
             head_pos.append(alignment.ref_begin)
 
@@ -249,7 +260,8 @@ def correct_chunk(chunk):
         junc_seqs = [get_junc_seq(template, -max(head_pos)//2, 25), ]
 
         for query in cluster[1:]:
-            query_seq = revcomp(query.seq) if query.strand != ref.strand else query.seq
+            # query_seq = revcomp(query.seq) if query.strand != ref.strand else query.seq
+            query_seq = query.seq
             alignment = ssw.align(query_seq)
             tmp = transform_seq(query_seq, alignment.query_begin)
             junc_seqs.append(get_junc_seq(tmp, -max(head_pos)//2, 25))
@@ -265,13 +277,17 @@ def correct_chunk(chunk):
         # Curate junction sequence
         scores = curate_junction(ctg, tmp_st, tmp_en, cs_junc)
         aval_junc = min_sorted_items(scores, 2)
-
-        # Annotated sites
-        anno_junc = annotated_hit(ctg, aval_junc)
-        if anno_junc:
-            circ_start, circ_end, circ_score = anno_junc[0]
+        if aval_junc:
+            anno_junc = annotated_hit(ctg, aval_junc)
+            if anno_junc:
+                anno_junc = sorted(anno_junc, key=lambda x: junc_score(ctg, x, junc_seqs), reverse=True)
+                circ_start, circ_end, circ_score = anno_junc[0]
+            else:
+                aval_junc = sorted(aval_junc, key=lambda x: junc_score(ctg, x, junc_seqs), reverse=True)
+                circ_start, circ_end, circ_score = aval_junc[0]
         else:
-            circ_start, circ_end, circ_score = aval_junc[0]
+            circ_start, circ_end = counter[0][0].split(':')[1].split('-')
+            circ_start, circ_end = int(circ_start), int(circ_end)
 
         # Annotated sites
         for shift_threshold in [5, 10]:
@@ -360,15 +376,17 @@ def correct_chunk(chunk):
         tmp_cluster = [i for i in cluster if i.type == 'full']
         if len(tmp_cluster) > 200:
             tmp_cluster = sample(tmp_cluster, 200)
+        tmp_cluster = sorted(tmp_cluster, key=lambda x: len(x.seq), reverse=True)
 
         for query in tmp_cluster:
-            if query.strand != ref.strand:
-                if query.strand == 'NA' and ref.strand == '+':
-                    query_seq = query.seq
-                else:
-                    query_seq = revcomp(query.seq)
-            else:
-                query_seq = query.seq
+            # if query.strand != ref.strand:
+            #     if query.strand == 'NA' and ref.strand == '+':
+            #         query_seq = query.seq
+            #     else:
+            #         query_seq = revcomp(query.seq)
+            # else:
+            #     query_seq = query.seq
+            query_seq = query.seq
 
             alignment = ssw.align(query_seq * 2)
             tmp_pos = find_alignment_pos(alignment, len(circ_junc_seq)//2)
@@ -723,17 +741,17 @@ def parse_cirexons(circ, read):
     if len(exons) == 0:
         return []
 
-    if exons[0].end <= circ.start:
+    while exons[0].end <= circ.start:
         exons = exons[1:]
-    else:
-        exons[0].start = circ.start
-    if len(exons) == 0:
-        return []
+        if len(exons) == 0:
+            return []
+    exons[0].start = circ.start
 
-    if exons[-1].start >= circ.end:
+    while exons[-1].start >= circ.end:
         exons = exons[:-1]
-    else:
-        exons[-1].end = circ.end
+        if len(exons) == 0:
+            return []
+    exons[-1].end = circ.end
 
     return exons
 
@@ -787,6 +805,8 @@ def check_isoforms(circ, isoforms):
                 introns.append(1)
             elif circ.strand == '-' and revcomp(n_ss) == 'GT' and revcomp(l_ss) == 'AG':
                 introns.append(1)
+            else:
+                introns.append(0)
         concordance.append(sum(introns) == len(introns))
 
     return sum(concordance) > 0
