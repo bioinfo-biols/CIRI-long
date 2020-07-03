@@ -9,8 +9,9 @@ from collections import defaultdict
 def call(args):
     from CIRI.logger import get_logger
     from CIRI.utils import check_file, check_dir
+    from CIIR.align import index_annotation
     from CIRI.find_ccs import find_ccs_reads, load_ccs_reads
-    from CIRI.find_bsj import index_annotation, scan_ccs_reads, recover_ccs_reads
+    from CIRI.find_bsj import scan_ccs_reads, recover_ccs_reads
     from CIRI.find_bsj import scan_raw_reads
 
     if args.input is None or args.output is None:
@@ -100,7 +101,7 @@ def call(args):
 def collapse(args):
     from CIRI.logger import get_logger
     from CIRI.utils import check_file, check_dir
-    from CIRI.find_bsj import index_annotation
+    from CIRI.align import index_annotation
     from CIRI import collapse
 
     if args.input is None or args.output is None:

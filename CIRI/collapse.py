@@ -234,7 +234,7 @@ def correct_chunk(chunk):
             continue
 
         # LOGGER.warn(cluster[0].read_id)
-        # if '72d741fb-83c1-4129-9093-1f145da1047c' not in [i.read_id for i in cluster]:
+        # if '17daa09d-c261-4a6e-b231-376440b3debf' not in [i.read_id for i in cluster]:
         #     continue
 
         counter = Counter([i.circ_id for i in cluster if i.type == 'full']).most_common(n=1)
@@ -566,15 +566,21 @@ def curate_cirexons(circ, cluster):
     for read in cluster:
         if read.cirexon == 'NA':
             continue
-        if read.type == 'partial':
-            continue
+
         exons = parse_cirexons(circ, read)
         if len(exons) == 0:
             continue
-        isoforms[read.read_id] = exons
-        for exon in exons:
-            starts.append(exon.start)
-            ends.append(exon.end)
+
+        for exon, exon_type in exons:
+            if exon_type != '*-':
+                starts.append(exon.start)
+            if exon_type != '-*':
+                ends.append(exon.end)
+
+        if read.type == 'partial':
+            continue
+        isoforms[read.read_id] = [i[0] for i in exons]
+
     if len(isoforms) == 0:
         return None
 
@@ -636,9 +642,49 @@ def curate_cirexons(circ, cluster):
 
     curated_exons = {}
     for read_id, exons in isoforms.items():
-        curated_exons[read_id] = [Exon(convert_st[exon.start], convert_en[exon.end]) for exon in exons]
+        tmp_exons = [Exon(convert_st[exon.start], convert_en[exon.end]) for exon in exons]
+
+        while tmp_exons[0].end <= circ.start:
+            tmp_exons = tmp_exons[1:]
+            if len(tmp_exons) == 0:
+                break
+        if len(tmp_exons) == 0:
+            continue
+
+        while tmp_exons[-1].start >= circ.end:
+            tmp_exons = tmp_exons[:-1]
+            if len(tmp_exons) == 0:
+                break
+        if len(tmp_exons) == 0:
+            continue
+
+        tmp_exons = merge_cirexons(tmp_exons)
+        if tmp_exons[0].start <= circ.start + 15 and tmp_exons[-1].end >= circ.end - 15:
+            tmp_exons[0].start = circ.start
+            tmp_exons[-1].end = circ.end
+        else:
+            continue
+
+        curated_exons[read_id] = tmp_exons
 
     return curated_exons
+
+
+def merge_cirexons(exons):
+    if len(exons) == 1:
+        return exons
+
+    last_exon = exons[0]
+    merged_exons = []
+    for exon in exons[1:]:
+        if exon.start <= last_exon.end + 10:
+            last_exon = Exon(last_exon.start, exon.end)
+        else:
+            merged_exons.append(last_exon)
+            last_exon = exon
+    merged_exons.append(last_exon)
+
+    return merged_exons
 
 
 def curate_isoform(circ, curated_exons, cluster_res):
@@ -660,7 +706,7 @@ def curate_isoform(circ, curated_exons, cluster_res):
                  key=lambda x: (len(final_isoforms[x][1]), final_isoforms[x][0]),
                  reverse=True)
     major_len = final_isoforms[ret[0]][0]
-    major_isoforms = [i for i in ret if len(final_isoforms[i][1]) >= 0.01 * total_cnt]
+    major_isoforms = [i for i in ret if len(final_isoforms[i][1]) >= 0.1 * total_cnt]
     return major_isoforms, major_len
 
 
@@ -737,22 +783,7 @@ def parse_cirexons(circ, read):
     exons = []
     for x in exon_str:
         st, en = x.split('|')[0].split('-')
-        exons.append(Exon(st, en))
-    if len(exons) == 0:
-        return []
-
-    while exons[0].end <= circ.start:
-        exons = exons[1:]
-        if len(exons) == 0:
-            return []
-    exons[0].start = circ.start
-
-    while exons[-1].start >= circ.end:
-        exons = exons[:-1]
-        if len(exons) == 0:
-            return []
-    exons[-1].end = circ.end
-
+        exons.append([Exon(st, en), x.split('|')[1]])
     return exons
 
 

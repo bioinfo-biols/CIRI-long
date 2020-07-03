@@ -366,14 +366,14 @@ def merge_exons(tail_exons, head_exons):
 
 
 def merge_clip_exon(exons, clip_info):
-    clip_st, clip_en, clip_base = clip_info
+    clip_st, clip_en = clip_info[0], clip_info[1]
     exon_st, exon_en = exons[0][0], exons[-1][1]
 
     if clip_st and clip_en:
         if clip_en < exon_st:
-            exons = [[clip_st, clip_en, clip_base], ] + exons
+            exons = [[clip_st, clip_en, clip_en - clip_st + 1], ] + exons
         elif exon_en < clip_st:
-            exons = exons + [[clip_st, clip_en, clip_base], ]
+            exons = exons + [[clip_st, clip_en, clip_en - clip_st + 1], ]
         elif clip_st < exon_st < clip_en:
             exons[0] = [clip_st, exons[0][1], exons[0][1] - clip_st + 1]
         elif clip_st < exon_en < clip_en:
