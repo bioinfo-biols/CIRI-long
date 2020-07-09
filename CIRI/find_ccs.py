@@ -7,7 +7,7 @@ LOGGER = logging.getLogger('CIRI-long')
 import numpy as np
 
 
-def collect_kmers(seq, k=8, use_hpc=False):
+def collect_kmers(seq, k=8, use_hpc=False, is_circular=False):
     """
     split sequence into kmers
     :param seq: sequence
@@ -19,11 +19,27 @@ def collect_kmers(seq, k=8, use_hpc=False):
     kmer_occ = defaultdict(list)
 
     split_func = split_hpc_kmers if use_hpc else split_kmers
-    for i, kmer in split_func(seq, k):
-        kmers[i] = kmer
-        kmer_occ[kmer].append(i)
+    if is_circular:
+        tmp_kmers, tmp_kmer_occ = collect_kmers(seq * 2, k, use_hpc, False)
+        for i in tmp_kmers:
+            if i < len(seq):
+                continue
+            kmers[i - len(seq)] = tmp_kmers[i]
+            kmer_occ[tmp_kmers[i]].append(i - len(seq))
+    else:
+        for i, kmer in split_func(seq, k):
+            kmers[i] = kmer
+            kmer_occ[kmer].append(i)
 
     return kmers, kmer_occ
+
+
+def all_kmers(k):
+    import itertools
+    all_bases = ['A', 'C', 'G', 'T']
+    all_list = [all_bases, ] * k
+    all_kmers = {''.join(kmer): idx for idx, kmer in enumerate(itertools.product(*all_list))}
+    return all_kmers
 
 
 def split_kmers(seq, k=8):

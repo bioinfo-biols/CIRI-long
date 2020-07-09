@@ -217,206 +217,205 @@ def junc_score(ctg, junc, junc_seqs):
 
 
 def correct_chunk(chunk):
-    from random import sample
-    from collections import Counter
-    from CIRI.poa import consensus
-    from libs.striped_smith_waterman.ssw_wrap import Aligner
-
     cs_cluster = []
     cnt = defaultdict(int)
     for cluster in chunk:
         if cluster is None:
             continue
-        if len(cluster) <= 1:
-            continue
-
-        if 'full' not in set([i.type for i in cluster]):
-            continue
-
-        # LOGGER.warn(cluster[0].read_id)
-        # if '17daa09d-c261-4a6e-b231-376440b3debf' not in [i.read_id for i in cluster]:
+        # if '631ecb01-6f74-4de9-b8ab-c673b95cc4d3' not in [i.read_id for i in cluster]:
         #     continue
+        ret = correct_cluster(cluster)
+        if ret is None:
+            continue
+        circ_type, circ_attr = ret
+        cnt[circ_type] += 1
+        cs_cluster.append(circ_attr)
+    return cs_cluster, cnt
 
-        counter = Counter([i.circ_id for i in cluster if i.type == 'full']).most_common(n=1)
-        ref = sorted([i for i in cluster if i.circ_id == counter[0][0] and i.type == 'full'],
-                     key=lambda x: len(x.seq), reverse=True)[0]
-        ssw = Aligner(ref.seq[:50], match=10, mismatch=4, gap_open=8, gap_extend=2)
 
-        head_pos = []
-        for query in cluster[1:]:
-            # if query.strand != ref.strand:
-            #     if query.strand == 'NA' and ref.strand == '+':
-            #         query_seq = query.seq
-            #     else:
-            #         query_seq = revcomp(query.seq)
-            # else:
-            #     query_seq = query.seq
-            query_seq = query.seq
-            alignment = ssw.align(query_seq)
-            head_pos.append(alignment.ref_begin)
+def correct_cluster(cluster, is_debug=False):
+    from random import sample
+    from collections import Counter
+    from CIRI.poa import consensus
+    from libs.striped_smith_waterman.ssw_wrap import Aligner
 
-        template = transform_seq(ref.seq, max(head_pos))
-        ssw = Aligner(template, match=10, mismatch=4, gap_open=8, gap_extend=2)
-        junc_seqs = [get_junc_seq(template, -max(head_pos)//2, 25), ]
+    if cluster is None:
+        return None
+    if len(cluster) <= 1:
+        return None
+    if 'full' not in set([i.type for i in cluster]):
+        return None
 
-        for query in cluster[1:]:
-            # query_seq = revcomp(query.seq) if query.strand != ref.strand else query.seq
-            query_seq = query.seq
-            alignment = ssw.align(query_seq)
-            tmp = transform_seq(query_seq, alignment.query_begin)
-            junc_seqs.append(get_junc_seq(tmp, -max(head_pos)//2, 25))
+    counter = Counter([i.circ_id for i in cluster if i.type == 'full']).most_common(n=1)
+    ref = sorted([i for i in cluster if i.circ_id == counter[0][0] and i.type == 'full'],
+                 key=lambda x: len(x.seq), reverse=True)[0]
+    ssw = Aligner(ref.seq[:50], match=10, mismatch=4, gap_open=8, gap_extend=2)
 
-        cs_junc = consensus(junc_seqs, alignment_type=2,
-                            match=10, mismatch=-4, gap=-8, extension=-2, gap_affine=-24, extension_affine=-1,
-                            debug=0)
+    head_pos = []
+    for query in cluster[1:]:
+        alignment = ssw.align(query.seq)
+        head_pos.append(alignment.ref_begin)
 
-        ctg = Counter([i.circ_id.split(':')[0] for i in cluster]).most_common()[0][0]
-        tmp_st = [int(i.circ_id.split(':')[1].split('-')[0]) for i in cluster]
-        tmp_en = [int(i.circ_id.split(':')[1].split('-')[1]) for i in cluster]
+    template = transform_seq(ref.seq, max(head_pos))
+    ssw = Aligner(template, match=10, mismatch=4, gap_open=8, gap_extend=2)
+    junc_seqs = [get_junc_seq(template, -max(head_pos)//2, 25), ]
 
-        # Curate junction sequence
-        scores = curate_junction(ctg, tmp_st, tmp_en, cs_junc)
-        aval_junc = min_sorted_items(scores, 2)
-        if aval_junc:
-            anno_junc = annotated_hit(ctg, aval_junc)
-            if anno_junc:
-                anno_junc = sorted(anno_junc, key=lambda x: junc_score(ctg, x, junc_seqs), reverse=True)
-                circ_start, circ_end, circ_score = anno_junc[0]
-            else:
-                aval_junc = sorted(aval_junc, key=lambda x: junc_score(ctg, x, junc_seqs), reverse=True)
-                circ_start, circ_end, circ_score = aval_junc[0]
+    for query in cluster[1:]:
+        alignment = ssw.align(query.seq)
+        tmp = transform_seq(query.seq, alignment.query_begin)
+        junc_seqs.append(get_junc_seq(tmp, -max(head_pos)//2, 25))
+
+    cs_junc = consensus(junc_seqs, alignment_type=2,
+                        match=10, mismatch=-4, gap=-8, extension=-2, gap_affine=-24, extension_affine=-1,
+                        debug=0)
+
+    ctg = Counter([i.circ_id.split(':')[0] for i in cluster]).most_common()[0][0]
+    tmp_st = [int(i.circ_id.split(':')[1].split('-')[0]) for i in cluster]
+    tmp_en = [int(i.circ_id.split(':')[1].split('-')[1]) for i in cluster]
+
+    # Curate junction sequence
+    scores = curate_junction(ctg, tmp_st, tmp_en, cs_junc)
+    aval_junc = min_sorted_items(scores, 2)
+    if aval_junc:
+        anno_junc = annotated_hit(ctg, aval_junc)
+        if anno_junc:
+            anno_junc = sorted(anno_junc, key=lambda x: junc_score(ctg, x, junc_seqs), reverse=True)
+            circ_start, circ_end, circ_score = anno_junc[0]
         else:
-            circ_start, circ_end = counter[0][0].split(':')[1].split('-')
-            circ_start, circ_end = int(circ_start), int(circ_end)
+            aval_junc = sorted(aval_junc, key=lambda x: junc_score(ctg, x, junc_seqs), reverse=True)
+            circ_start, circ_end, circ_score = aval_junc[0]
+    else:
+        circ_start, circ_end = counter[0][0].split(':')[1].split('-')
+        circ_start, circ_end = int(circ_start), int(circ_end)
 
-        # Annotated sites
+    # Annotated sites
+    for shift_threshold in [5, 10]:
+        ss_site, us_free, ds_free = find_annotated_signal(ctg, circ_start, circ_end, 0, 10, shift_threshold)
+        if ss_site is not None:
+            ss_id, strand, us_shift, ds_shift = ss_site
+            circ_start += us_shift
+            circ_end += ds_shift
+            break
+
+    host_strand = find_host_gene(ctg, circ_start, circ_end)
+    circ_type = None
+
+    # Canonical sites
+    if ss_site is None:
         for shift_threshold in [5, 10]:
-            ss_site, us_free, ds_free = find_annotated_signal(ctg, circ_start, circ_end, 0, 10, shift_threshold)
+            ss_site = find_denovo_signal(ctg, circ_start, circ_end, host_strand, us_free, ds_free,
+                                         0, 10, shift_threshold, True)
             if ss_site is not None:
                 ss_id, strand, us_shift, ds_shift = ss_site
                 circ_start += us_shift
                 circ_end += ds_shift
+                circ_type = 'Annotated'
                 break
 
-        host_strand = find_host_gene(ctg, circ_start, circ_end)
+    # Intronic circRNAs
+    if ss_site is None:
+        retained_introns = find_retained_introns(ctg, circ_start + 1, circ_end)
+        overlap_exons = find_overlap_exons(ctg, circ_start + 1, circ_end)
 
-        # Canonical sites
-        if ss_site is None:
-            for shift_threshold in [5, 10]:
-                ss_site = find_denovo_signal(ctg, circ_start, circ_end, host_strand, us_free, ds_free,
-                                             0, 10, shift_threshold, True)
-                if ss_site is not None:
-                    ss_id, strand, us_shift, ds_shift = ss_site
-                    circ_start += us_shift
-                    circ_end += ds_shift
-                    cnt['Annotated'] += 1
-                    break
+        is_lariat = 0
+        if retained_introns is not None and overlap_exons is None:
+            is_lariat = 1
+            # Find high-confidence ciRNAs
+            retained_introns = set(sum([i for _, i in retained_introns.items()], []))
+            retained_strand = set([i[2] for i in retained_introns])
+            tmp_circ = []
+            for intron_start, intron_end, intron_strand in retained_introns:
+                if abs(intron_start - circ_start) > 50 or abs(intron_end - circ_end) > 50:
+                    continue
+                if intron_strand == '+':
+                    tmp_site = [i for i in scores if i[0] == intron_start]
+                else:
+                    tmp_site = [i for i in scores if i[1] == intron_end]
+                if tmp_site:
+                    tmp_circ.append([*tmp_site[0], intron_strand])
 
-        # Intronic circRNAs
-        if ss_site is None:
-            retained_introns = find_retained_introns(ctg, circ_start + 1, circ_end)
-            overlap_exons = find_overlap_exons(ctg, circ_start + 1, circ_end)
-
-            is_lariat = 0
-            if retained_introns is not None and overlap_exons is None:
-                is_lariat = 1
-                # Find high-confidence ciRNAs
-                retained_introns = set(sum([i for _, i in retained_introns.items()], []))
-                retained_strand = set([i[2] for i in retained_introns])
+            ss_id = 'lariat'
+            if tmp_circ:
+                circ_start, circ_end, circ_score, strand = sorted(tmp_circ, key=lambda x: x[2])[0]
+                circ_type = 'High confidence lariat'
+            else:
+                # Lariat with recursive splicing branchpoint
+                is_lariat = 0
                 tmp_circ = []
-                for intron_start, intron_end, intron_strand in retained_introns:
-                    if abs(intron_start - circ_start) > 50 or abs(intron_end - circ_end) > 50:
-                        continue
-                    if intron_strand == '+':
-                        tmp_site = [i for i in scores if i[0] == intron_start]
-                    else:
-                        tmp_site = [i for i in scores if i[1] == intron_end]
-                    if tmp_site:
-                        tmp_circ.append([*tmp_site[0], intron_strand])
-
-                ss_id = 'lariat'
+                for tmp_strand in retained_strand:
+                    tmp_start, tmp_end, tmp_score = recursive_splice_site(scores, ctg, tmp_strand)
+                    if tmp_score is not None:
+                        tmp_circ.append([tmp_start, tmp_end, tmp_score, tmp_strand])
                 if tmp_circ:
                     circ_start, circ_end, circ_score, strand = sorted(tmp_circ, key=lambda x: x[2])[0]
-                    cnt['High confidence lariat'] += 1
+                    # cnt['Recursive splicing lariat'] += 1
                 else:
-                    # Lariat with recursive splicing branchpoint
-                    is_lariat = 0
-                    tmp_circ = []
-                    for tmp_strand in retained_strand:
-                        tmp_start, tmp_end, tmp_score = recursive_splice_site(scores, ctg, tmp_strand)
-                        if tmp_score is not None:
-                            tmp_circ.append([tmp_start, tmp_end, tmp_score, tmp_strand])
-                    if tmp_circ:
-                        circ_start, circ_end, circ_score, strand = sorted(tmp_circ, key=lambda x: x[2])[0]
-                        # cnt['Recursive splicing lariat'] += 1
-                    else:
-                        # cnt['Unknown lariat'] += 1
-                        strand = 'None'
-
-            # Find denovo splice signal
-            if is_lariat == 0:
-                ss_site = find_denovo_signal(ctg, circ_start, circ_end, host_strand, us_free, ds_free,
-                                             5, 10, 3, False)
-                if ss_site is not None:
-                    ss_id, strand, us_shift, ds_shift = ss_site
-                    circ_start += us_shift
-                    circ_end += ds_shift
-                    cnt['Denovo signal'] += 1
-                else:
-                    ss_id = 'None'
+                    # cnt['Unknown lariat'] += 1
                     strand = 'None'
-                    cnt['Unknown signal'] += 1
 
-        circ_id = '{}:{}-{}'.format(ctg, circ_start + 1, circ_end)
-
-        cluster_seq = []
-        circ_junc_seq = genome_junction_seq(ctg, circ_start, circ_end)
-        ssw = Aligner(circ_junc_seq, match=10, mismatch=4, gap_open=8, gap_extend=2, report_cigar=True)
-
-        tmp_cluster = [i for i in cluster if i.type == 'full']
-        if len(tmp_cluster) > 200:
-            tmp_cluster = sample(tmp_cluster, 200)
-        tmp_cluster = sorted(tmp_cluster, key=lambda x: len(x.seq), reverse=True)
-
-        for query in tmp_cluster:
-            # if query.strand != ref.strand:
-            #     if query.strand == 'NA' and ref.strand == '+':
-            #         query_seq = query.seq
-            #     else:
-            #         query_seq = revcomp(query.seq)
-            # else:
-            #     query_seq = query.seq
-            query_seq = query.seq
-
-            alignment = ssw.align(query_seq * 2)
-            tmp_pos = find_alignment_pos(alignment, len(circ_junc_seq)//2)
-            if tmp_pos is None:
-                cluster_seq.append((query.read_id, query_seq))
+        # Find denovo splice signal
+        if is_lariat == 0:
+            ss_site = find_denovo_signal(ctg, circ_start, circ_end, host_strand, us_free, ds_free,
+                                         5, 10, 3, False)
+            if ss_site is not None:
+                ss_id, strand, us_shift, ds_shift = ss_site
+                circ_start += us_shift
+                circ_end += ds_shift
+                circ_type = 'Denovo signal'
             else:
-                tmp_seq = transform_seq(query_seq, tmp_pos % len(query_seq))
-                cluster_seq.append((query.read_id, tmp_seq))
+                ss_id = 'None'
+                strand = 'None'
+                circ_type = 'Unknown signal'
 
-        cluster_res = batch_cluster_sequence(circ_id, cluster_seq)
+    circ_id = '{}:{}-{}'.format(ctg, circ_start + 1, circ_end)
 
-        circ = CIRC(ctg, circ_start + 1, circ_end, strand)
+    # refined sequence
+    cluster_seq = []
+    circ_junc_seq = genome_junction_seq(ctg, circ_start, circ_end)
+    ssw = Aligner(circ_junc_seq, match=10, mismatch=4, gap_open=8, gap_extend=2, report_cigar=True)
 
-        curated_exons = curate_cirexons(circ, cluster)
-        if curated_exons is None:
-            continue
+    tmp_cluster = [i for i in cluster if i.type == 'full']
+    if len(tmp_cluster) > 200:
+        tmp_cluster = sample(tmp_cluster, 200)
+    tmp_cluster = sorted(tmp_cluster, key=lambda x: len(x.seq), reverse=True)
 
-        isoforms, circ_len = curate_isoform(circ, curated_exons, cluster_res)
-        if isoforms is None:
-            continue
+    for query in tmp_cluster:
+        alignment = ssw.align(query.seq * 2)
+        tmp_pos = find_alignment_pos(alignment, len(circ_junc_seq)//2)
+        if tmp_pos is None:
+            cluster_seq.append((query.read_id, query.seq ))
+        else:
+            tmp_seq = transform_seq(query.seq, tmp_pos % len(query.seq ))
+            cluster_seq.append((query.read_id, tmp_seq))
 
-        is_concordance = check_isoforms(circ, isoforms)
-        if not is_concordance:
-            continue
+    cluster_res = batch_cluster_sequence(circ_id, cluster_seq)
+    cluster_res = sorted(cluster_res, key=lambda x: len(x[1]), reverse=True)
 
-        cs_cluster.append(([i.read_id for i in cluster], cluster_seq, circ_id, strand,
-                           ss_id, us_free, ds_free, circ_len, isoforms))
+    circ = CIRC(ctg, circ_start + 1, circ_end, strand)
+    circ_id = '{}:{}-{}'.format(circ.contig, circ.start, circ.end)
 
-        # LOGGER.warn('finished')
-    return cs_cluster, cnt
+    if len(cluster_res) > 2 and len(cluster_res[0][1]) >= 0.5 * max(len(tmp_cluster), 10):
+        tmp_res = correct_cluster([i for i in cluster if i.read_id in cluster_res[0][1]], True)
+        if tmp_res is not None:
+            circ = tmp_res
+            circ_id = '{}:{}-{}'.format(circ.contig, circ.start, circ.end)
+
+    # Filter out strange cirexons
+    curated_exons = curate_cirexons(circ, cluster)
+    if curated_exons is None:
+        return None
+    isoforms, circ_len = curate_isoform(circ, curated_exons, cluster_res)
+    if isoforms is None:
+        return None
+    is_concordance = check_isoforms(circ, isoforms)
+    if not is_concordance:
+        return None
+
+    if is_debug:
+        return circ
+
+    return circ_type, ([i.read_id for i in cluster], cluster_seq, circ_id, circ.strand,
+                       ss_id, us_free, ds_free, circ_len, isoforms)
 
 
 def batch_cluster_sequence(circ_id, x):
@@ -907,39 +906,39 @@ def cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix
     circ_info = {}
     reads_df = []
 
-    with open('{}/{}.fa'.format(out_dir, prefix), 'w') as fa:
-        for reads, seqs, circ_id, strand, ss_id, us_free, ds_free, circ_len, isoforms in corrected_reads:
-            for tmp_id, tmp_seq in zip(reads, seqs):
-                fa.write('>{}\t{}\t{}\n{}\n'.format(tmp_id, circ_id, strand, tmp_seq))
+    # with open('{}/{}.fa'.format(out_dir, prefix), 'w') as fa:
+    for reads, seqs, circ_id, strand, ss_id, us_free, ds_free, circ_len, isoforms in corrected_reads:
+        # for tmp_id, tmp_seq in zip(reads, seqs):
+        #     fa.write('>{}\t{}\t{}\n{}\n'.format(tmp_id, circ_id, strand, tmp_seq))
 
-            # circRNA information
-            ctg, st, en = circ_pos(circ_id)
-            field = circ_attr(gtf_idx, ctg, st, en, strand)
+        # circRNA information
+        ctg, st, en = circ_pos(circ_id)
+        field = circ_attr(gtf_idx, ctg, st, en, strand)
 
-            tmp_attr = 'circ_id "{}"; splice_site "{}"; equivalent_seq "{}"; circ_type "{}"; circ_len "{}";'.format(
-                circ_id,
-                ss_id,
-                equivalent_seq(genome, ctg, st, en, strand),
-                field['circ_type'] if field else 'Unknown',
-                circ_len,
-            )
-            if isoforms:
-                tmp_attr += ' isoform "{}";'.format('|'.join(isoforms))
+        tmp_attr = 'circ_id "{}"; splice_site "{}"; equivalent_seq "{}"; circ_type "{}"; circ_len "{}";'.format(
+            circ_id,
+            ss_id,
+            equivalent_seq(genome, ctg, st, en, strand),
+            field['circ_type'] if field else 'Unknown',
+            circ_len,
+        )
+        if isoforms:
+            tmp_attr += ' isoform "{}";'.format('|'.join(isoforms))
 
-            for key in 'gene_id', 'gene_name', 'gene_type':
-                if key in field:
-                    tmp_attr += ' {} "{}";'.format(key, field[key])
-            circ_info[circ_id] = [ctg, 'CIRI-long', 'circRNA', st, en, len(reads), strand, '.', tmp_attr, ]
+        for key in 'gene_id', 'gene_name', 'gene_type':
+            if key in field:
+                tmp_attr += ' {} "{}";'.format(key, field[key])
+        circ_info[circ_id] = [ctg, 'CIRI-long', 'circRNA', st, en, len(reads), strand, '.', tmp_attr, ]
 
-            # Expression levels
-            circ_reads[circ_id] += reads
+        # Expression levels
+        circ_reads[circ_id] += reads
 
-            # Corrected reads
-            for read_id in reads:
-                read = cand_reads[read_id]
-                tmp = [read_id, circ_id, read.circ_id, read.strand, read.cirexon,
-                       read.ss, read.clip, read.segments, read.sample, read.type]
-                reads_df.append(tmp)
+        # Corrected reads
+        for read_id in reads:
+            read = cand_reads[read_id]
+            tmp = [read_id, circ_id, read.circ_id, read.strand, read.cirexon,
+                   read.ss, read.clip, read.segments, read.sample, read.type]
+            reads_df.append(tmp)
 
     # circular reads
     reads_df = pd.DataFrame(
