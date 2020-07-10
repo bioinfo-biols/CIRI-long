@@ -216,7 +216,7 @@ def junc_score(ctg, junc, junc_seqs):
     return score
 
 
-def correct_chunk(chunk):
+def correct_chunk(chunk, max_cluster=200):
     cs_cluster = []
     cnt = defaultdict(int)
     for cluster in chunk:
@@ -224,7 +224,7 @@ def correct_chunk(chunk):
             continue
         # if '631ecb01-6f74-4de9-b8ab-c673b95cc4d3' not in [i.read_id for i in cluster]:
         #     continue
-        ret = correct_cluster(cluster)
+        ret = correct_cluster(cluster, max_cluster)
         if ret is None:
             continue
         circ_type, circ_attr = ret
@@ -233,7 +233,7 @@ def correct_chunk(chunk):
     return cs_cluster, cnt
 
 
-def correct_cluster(cluster, is_debug=False):
+def correct_cluster(cluster, is_debug=False, max_cluster=200):
     from random import sample
     from collections import Counter
     from CIRI.poa import consensus
@@ -375,8 +375,8 @@ def correct_cluster(cluster, is_debug=False):
     ssw = Aligner(circ_junc_seq, match=10, mismatch=4, gap_open=8, gap_extend=2, report_cigar=True)
 
     tmp_cluster = [i for i in cluster if i.type == 'full']
-    if len(tmp_cluster) > 200:
-        tmp_cluster = sample(tmp_cluster, 200)
+    if len(tmp_cluster) > max_cluster:
+        tmp_cluster = sample(tmp_cluster, max_cluster)
     tmp_cluster = sorted(tmp_cluster, key=lambda x: len(x.seq), reverse=True)
 
     for query in tmp_cluster:
@@ -851,7 +851,7 @@ def correct_reads(reads_cluster, ref_fasta, gtf_index, intron_index, ss_index, t
     pool = Pool(threads, env.initializer, (None, genome.contig_len, genome, gtf_index, intron_index, ss_index, ))
 
     for cluster in grouper(reads_cluster, 250):
-        jobs.append(pool.apply_async(correct_chunk, (cluster,)))
+        jobs.append(pool.apply_async(correct_chunk, (cluster, 200)))
     pool.close()
 
     prog = ProgressBar()
@@ -1028,7 +1028,7 @@ def circ_attr(gtf_index, ctg, start, end, strand):
 
     if len(host_gene) > 0:
         for gene_id in host_gene:
-            if strand is None or host_gene[gene_id].strand == strand:
+            if strand == 'None' or host_gene[gene_id].strand == strand:
                 forward_host_gene.append(host_gene[gene_id])
                 if 'exon' in start_element and 'exon' in end_element:
                     circ_type['exon'] = 1
