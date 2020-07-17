@@ -428,6 +428,8 @@ def get_primary_alignment(hits):
 
 
 def find_annotated_signal(contig, start, end, clip_base, search_length=10, shift_threshold=3):
+    tmp_annotated_signal = {}
+
     ds_free = 0
     for i in range(100):
         if end + i > env.CONTIG_LEN[contig]:
@@ -496,6 +498,8 @@ def find_annotated_signal(contig, start, end, clip_base, search_length=10, shift
                     continue
                 tmp_ds_sites.append(ds_shift)
 
+            tmp_annotated_signal[strand] = (tmp_us_sites, tmp_ds_sites)
+
             if len(tmp_us_sites) == 0 or len(tmp_ds_sites) == 0:
                 continue
 
@@ -515,12 +519,12 @@ def find_annotated_signal(contig, start, end, clip_base, search_length=10, shift
                     ))
 
         if len(anno_ss) > 0:
-            return sort_ss(anno_ss, us_free, ds_free, clip_base), us_free, ds_free
+            return sort_ss(anno_ss, us_free, ds_free, clip_base), us_free, ds_free, tmp_annotated_signal
 
-    return None, us_free, ds_free
+    return None, us_free, ds_free, tmp_annotated_signal
 
 
-def find_denovo_signal(contig, start, end, host_strand, us_free, ds_free, clip_base,
+def find_denovo_signal(contig, start, end, host_strand, tmp_signal, us_free, ds_free, clip_base,
                        search_length=10, shift_threshold=3, is_canonical=False):
     # Second: find GT-AG splice signal
     us_search_length = search_length + us_free
@@ -554,7 +558,7 @@ def find_denovo_signal(contig, start, end, host_strand, us_free, ds_free, clip_b
                     tmp_us = us_seq.find(us_ss, tmp_us_start + 1)
                     if tmp_us == -1:
                         break
-                    tmp_us_sites.append(tmp_us)
+                    tmp_us_sites.append(tmp_us - us_search_length)
                     tmp_us_start = tmp_us
 
                 # Find downstream signal
@@ -564,8 +568,13 @@ def find_denovo_signal(contig, start, end, host_strand, us_free, ds_free, clip_b
                     tmp_ds = ds_seq.find(ds_ss, tmp_ds_start + 1)
                     if tmp_ds == -1:
                         break
-                    tmp_ds_sites.append(tmp_ds)
+                    tmp_ds_sites.append(tmp_ds - us_search_length)
                     tmp_ds_start = tmp_ds
+
+                if strand in tmp_signal:
+                    tmp_us_signal, tmp_ds_signal = tmp_signal[strand]
+                    tmp_us_sites = sorted(list(set(tmp_us_sites + tmp_us_signal)))
+                    tmp_ds_sites = sorted(list(set(tmp_ds_sites + tmp_ds_signal)))
 
                 # Filter paired splice signal in concordance position
                 if len(tmp_us_sites) == 0 or len(tmp_ds_sites) == 0:
@@ -575,12 +584,10 @@ def find_denovo_signal(contig, start, end, host_strand, us_free, ds_free, clip_b
                     for j in tmp_ds_sites:
                         if abs(i - j) > clip_base + shift_threshold:
                             continue
-                        us_shift = i - us_search_length
-                        ds_shift = j - us_search_length
-                        ss_id = '{}-{}*|{}-{}'.format(tmp_us_ss, tmp_ds_ss, us_shift, ds_shift)
+                        ss_id = '{}-{}*|{}-{}'.format(tmp_us_ss, tmp_ds_ss, i, j)
                         prior_ss.append((
                             ss_id, strand, us_shift, ds_shift, ss_weight,
-                            *get_ss_altered_length(us_shift, ds_shift, us_free, ds_free, clip_base)
+                            *get_ss_altered_length(i, j, us_free, ds_free, clip_base)
                         ))
 
     if len(prior_ss) > 0:
@@ -606,7 +613,7 @@ def find_denovo_signal(contig, start, end, host_strand, us_free, ds_free, clip_b
                     tmp_us = us_seq.find(us_ss, tmp_us_start + 1)
                     if tmp_us == -1:
                         break
-                    tmp_us_sites.append(tmp_us)
+                    tmp_us_sites.append(tmp_us - us_search_length)
                     tmp_us_start = tmp_us
 
                 # Find downstream signal
@@ -616,8 +623,13 @@ def find_denovo_signal(contig, start, end, host_strand, us_free, ds_free, clip_b
                     tmp_ds = ds_seq.find(ds_ss, tmp_ds_start + 1)
                     if tmp_ds == -1:
                         break
-                    tmp_ds_sites.append(tmp_ds)
+                    tmp_ds_sites.append(tmp_ds - us_search_length)
                     tmp_ds_start = tmp_ds
+
+                if strand in tmp_signal:
+                    tmp_us_signal, tmp_ds_signal = tmp_signal[strand]
+                    tmp_us_sites = sorted(list(set(tmp_us_sites + tmp_us_signal)))
+                    tmp_ds_sites = sorted(list(set(tmp_ds_sites + tmp_ds_signal)))
 
                 # Filter paired splice signal in concordance position
                 if len(tmp_us_sites) == 0 or len(tmp_ds_sites) == 0:
@@ -627,12 +639,10 @@ def find_denovo_signal(contig, start, end, host_strand, us_free, ds_free, clip_b
                     for j in tmp_ds_sites:
                         if abs(i - j) > clip_base + shift_threshold:
                             continue
-                        us_shift = i - us_search_length
-                        ds_shift = j - us_search_length
-                        ss_id = '{}-{}*|{}-{}'.format(tmp_us_ss, tmp_ds_ss, us_shift, ds_shift)
+                        ss_id = '{}-{}*|{}-{}'.format(tmp_us_ss, tmp_ds_ss, i, j)
                         other_ss.append((
                             ss_id, strand, us_shift, ds_shift, ss_weight,
-                            *get_ss_altered_length(us_shift, ds_shift, us_free, ds_free, clip_base)
+                            *get_ss_altered_length(i, j, us_free, ds_free, clip_base)
                         ))
 
     if len(other_ss) > 0:

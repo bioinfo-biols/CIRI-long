@@ -290,7 +290,7 @@ def correct_cluster(cluster, is_debug=False, max_cluster=200):
 
     # Annotated sites
     for shift_threshold in [5, 10]:
-        ss_site, us_free, ds_free = find_annotated_signal(ctg, circ_start, circ_end, 0, 10, shift_threshold)
+        ss_site, us_free, ds_free, tmp_signal = find_annotated_signal(ctg, circ_start, circ_end, 0, 10, shift_threshold)
         if ss_site is not None:
             ss_id, strand, us_shift, ds_shift = ss_site
             circ_start += us_shift
@@ -303,8 +303,8 @@ def correct_cluster(cluster, is_debug=False, max_cluster=200):
     # Canonical sites
     if ss_site is None:
         for shift_threshold in [5, 10]:
-            ss_site = find_denovo_signal(ctg, circ_start, circ_end, host_strand, us_free, ds_free,
-                                         0, 10, shift_threshold, True)
+            ss_site = find_denovo_signal(ctg, circ_start, circ_end, host_strand, tmp_signal,
+                                         us_free, ds_free, 0, 10, shift_threshold, True)
             if ss_site is not None:
                 ss_id, strand, us_shift, ds_shift = ss_site
                 circ_start += us_shift
@@ -355,8 +355,8 @@ def correct_cluster(cluster, is_debug=False, max_cluster=200):
 
         # Find denovo splice signal
         if is_lariat == 0:
-            ss_site = find_denovo_signal(ctg, circ_start, circ_end, host_strand, us_free, ds_free,
-                                         5, 10, 3, False)
+            ss_site = find_denovo_signal(ctg, circ_start, circ_end, host_strand, tmp_signal,
+                                         us_free, ds_free, 5, 10, 3, False)
             if ss_site is not None:
                 ss_id, strand, us_shift, ds_shift = ss_site
                 circ_start += us_shift
