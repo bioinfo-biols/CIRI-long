@@ -586,7 +586,7 @@ def find_denovo_signal(contig, start, end, host_strand, tmp_signal, us_free, ds_
                             continue
                         ss_id = '{}-{}*|{}-{}'.format(tmp_us_ss, tmp_ds_ss, i, j)
                         prior_ss.append((
-                            ss_id, strand, us_shift, ds_shift, ss_weight,
+                            ss_id, strand, i, j, ss_weight,
                             *get_ss_altered_length(i, j, us_free, ds_free, clip_base)
                         ))
 
@@ -641,7 +641,7 @@ def find_denovo_signal(contig, start, end, host_strand, tmp_signal, us_free, ds_
                             continue
                         ss_id = '{}-{}*|{}-{}'.format(tmp_us_ss, tmp_ds_ss, i, j)
                         other_ss.append((
-                            ss_id, strand, us_shift, ds_shift, ss_weight,
+                            ss_id, strand, i, j, ss_weight,
                             *get_ss_altered_length(i, j, us_free, ds_free, clip_base)
                         ))
 

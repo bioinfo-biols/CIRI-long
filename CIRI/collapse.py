@@ -224,7 +224,7 @@ def correct_chunk(chunk, max_cluster=200):
             continue
         # if '631ecb01-6f74-4de9-b8ab-c673b95cc4d3' not in [i.read_id for i in cluster]:
         #     continue
-        ret = correct_cluster(cluster, max_cluster)
+        ret = correct_cluster(cluster, max_cluster=max_cluster)
         if ret is None:
             continue
         circ_type, circ_attr = ret
