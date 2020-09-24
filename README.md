@@ -7,7 +7,7 @@ Circular RNA Identification for Nanopore Sequencing Data
 
 ### Author ###
 
-Authors: Jinyang Zhang(zhangjinyang@biols.ac.cn), Fangqing Zhao(zfdq@biols.ac.cn)
+Authors: Jinyang Zhang(zhangjinyang@biols.ac.cn), Fangqing Zhao(zhfq@biols.ac.cn)
 
 Maintainer: Jinyang Zhang
 
