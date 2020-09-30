@@ -295,6 +295,7 @@ def correct_cluster(cluster, is_debug=False, max_cluster=200):
             ss_id, strand, us_shift, ds_shift = ss_site
             circ_start += us_shift
             circ_end += ds_shift
+            circ_type = 'Annotated'
             break
 
     host_strand = find_host_gene(ctg, circ_start, circ_end)
