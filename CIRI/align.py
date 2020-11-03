@@ -449,7 +449,7 @@ def find_annotated_signal(contig, start, end, clip_base, search_length=10, shift
             break
 
     if start - search_length - us_free - 2 < 0 or end + search_length + ds_free + 2 > env.CONTIG_LEN[contig]:
-        return None, us_free, ds_free
+        return None, us_free, ds_free, tmp_annotated_signal
 
     # First: find annotated splice signal
     if env.SS_INDEX is not None and contig in env.SS_INDEX:
