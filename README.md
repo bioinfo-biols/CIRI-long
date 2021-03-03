@@ -1,4 +1,4 @@
-## CIRI-long
+## CIRI-long: circular RNA identifier using long-read sequencing data
 
 [![Build Status](https://travis-ci.com/Kevinzjy/CIRI-long.svg?token=sq9vq2uzixNezTJhts8Z&branch=master)](https://travis-ci.com/Kevinzjy/CIRI-long)
 [![The MIT License](https://img.shields.io/badge/license-MIT-orange.svg)](https://github.com/Kevinzjy/CIRI-long/blob/master/LICENSE)
