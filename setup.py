@@ -18,23 +18,10 @@ def read(infile):
     return codecs.open(os.path.join(os.path.dirname(__file__), infile)).read()
 
 
-extensions = [
-    Extension(
-        "CIRI.poa",
-        sources=["CIRI/poa.pyx"],
-        depends=["CIRI/cpoa.h", "CIRI/cpoa.pxd"],
-        include_dirs=['./CIRI', 'vendor/spoa/include'],
-        libraries=['spoa'],
-        language="c++",
-        library_dirs=['vendor/spoa/build/lib'],
-        extra_compile_args=['-std=c++11'],
-    ),
-]
-
 setup(
     name='CIRI-long',
     version=__version__,
-    url='https://github.com/Kevinzjy/CIRI-long',
+    url='https://github.com/bioinfo-biols/CIRI-long',
     description='circular RNA identification from Nanopore',
     long_description=read('README.md'),
     long_description_content_type='text/markdown',
@@ -50,8 +37,6 @@ setup(
             'CIRI-long=CIRI.main:main',
         ]
     },
-    ext_modules=cythonize(extensions,
-                          build_dir="./"),
     include_package_data=True,
     zip_safe=False,
     install_requires=[

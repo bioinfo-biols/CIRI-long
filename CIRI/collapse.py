@@ -236,7 +236,7 @@ def correct_chunk(chunk, max_cluster=200):
 def correct_cluster(cluster, is_debug=False, max_cluster=200):
     from random import sample
     from collections import Counter
-    from CIRI.poa import consensus
+    from spoa import poa
     from libs.striped_smith_waterman.ssw_wrap import Aligner
 
     if cluster is None:
@@ -265,9 +265,7 @@ def correct_cluster(cluster, is_debug=False, max_cluster=200):
         tmp = transform_seq(query.seq, alignment.query_begin)
         junc_seqs.append(get_junc_seq(tmp, -max(head_pos)//2, 25))
 
-    cs_junc = consensus(junc_seqs, alignment_type=2,
-                        match=10, mismatch=-4, gap=-8, extension=-2, gap_affine=-24, extension_affine=-1,
-                        debug=0)
+    cs_junc = poa(junc_seqs, 2, False, 10, -4, -8, -2, -24, -1)
 
     ctg = Counter([i.circ_id.split(':')[0] for i in cluster]).most_common()[0][0]
     tmp_st = [int(i.circ_id.split(':')[1].split('-')[0]) for i in cluster]
@@ -463,7 +461,7 @@ def cluster_sequence(hpc_freq, sequence):
     from scipy.cluster.hierarchy import linkage, leaves_list
     from scipy.spatial.distance import squareform
     from Levenshtein import distance
-    from CIRI.poa import consensus
+    from spoa import poa
 
     if len(hpc_freq) == 1:
         return hpc_freq
@@ -506,7 +504,7 @@ def cluster_sequence(hpc_freq, sequence):
         cluster_seq = [sequence[i] for i in cluster_reads]
 
         # Generate consensus sequence
-        ccs = consensus(cluster_seq, 2, 10, -4, -8, -2, -24, -1, 0)
+        ccs = poa(cluster_seq, 2, False, 10, -4, -8, -2, -24, -1)
         ccs_seq.append((ccs, cluster_reads))
     return ccs_seq
 

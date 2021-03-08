@@ -1,13 +1,13 @@
 ## CIRI-long: circular RNA identifier using long-read sequencing data
 
-[![Build Status](https://travis-ci.com/Kevinzjy/CIRI-long.svg?token=sq9vq2uzixNezTJhts8Z&branch=master)](https://travis-ci.com/Kevinzjy/CIRI-long)
-[![The MIT License](https://img.shields.io/badge/license-MIT-orange.svg)](https://github.com/Kevinzjy/CIRI-long/blob/master/LICENSE)
+[![Build Status](https://staging.travis-ci.com/bioinfo-biols/CIRI-long.svg?branch=master)](https://staging.travis-ci.com/bioinfo-biols/CIRI-long)
+[![The MIT License](https://img.shields.io/badge/license-MIT-orange.svg)](https://github.com/bioinfo-biols/CIRI-long/blob/master/LICENSE)
 
 Circular RNA Identification for Long-Reads Nanopore Sequencing Data
 
 ### Documentation
 
-Documentation is available oneline at https://github.com/Kevinzjy/CIRI-long/wiki
+Documentation is available oneline at https://github.com/bioinfo-biols/CIRI-long/wiki
 
 ### Author
 

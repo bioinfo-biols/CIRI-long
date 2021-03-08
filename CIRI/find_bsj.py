@@ -491,11 +491,9 @@ def recover_ccs_reads(short_reads, ref_fasta, ss_index, gtf_index, intron_index,
 
 
 def check_read(segments, seq):
-    from CIRI.poa import consensus
+    from spoa import poa
     fasta = [seq[int(i.split('-')[0]):int(i.split('-')[1])] for i in segments.split(';')]
-    consensus(fasta, alignment_type=1,
-              match=1, mismatch=-1, gap=-1, extension=-1, gap_affine=-1, extension_affine=-1,
-              debug=1)
+    poa(fasta, 1, True, -1, -1, -1, -1, -1)
 
 
 def scan_raw_chunk(chunk, is_canonical, circ_reads):

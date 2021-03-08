@@ -263,7 +263,7 @@ def circular_finder(read_id, seq, k=8, use_hpc=True, p_match=.85, p_indel=.1, d_
 
 
 def find_consensus(header, seq):
-    from CIRI.poa import consensus
+    from spoa import poa
     from Levenshtein import distance
 
     # Trim sequence
@@ -293,9 +293,7 @@ def find_consensus(header, seq):
         return None, None, None
 
     fasta = [seq[s:e] for s, e in chains]
-    ccs = consensus(fasta, alignment_type=2,
-                    match=10, mismatch=-4, gap=-8, extension=-2, gap_affine=-24, extension_affine=-1,
-                    debug=0)
+    ccs = poa(fasta, 2, False, 10, -4, -8, -2, -24, -1)
 
     # Check segment similarity
     tail = fasta[-1]
