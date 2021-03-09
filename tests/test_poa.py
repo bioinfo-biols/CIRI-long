@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from CIRI import poa
+from spoa import poa
 
 
 def test_poa():
@@ -11,10 +11,8 @@ def test_poa():
         ('579-721', 'TCCCGGTCATCATAACCCCGATCGTACCCATAATAGTCTCGGCGAGAACTGCCACTGTAAATCCTGATCCCTGTCTTGAGCTGCTCTCCATCCACCTCCTCCACCACCTCCTCCTCTGTATGATCTGCTGTAATAG'),
         ('721-742', 'TCCGGTCATCATAACCCCGATCCATAATAGTCTCGGCG'),
     )
-    ccs = poa.consensus([i[1] for i in fasta], 0,
-                        10, -4, -8, -2, -24, -1,
-                        debug=1)
-    print(ccs)
+    ccs, msa = poa([i[1] for i in fasta], 0, True, 10, -4, -8, -2, -24, -1)
+    print(ccs, msa)
 
 
 if __name__ == '__main__':

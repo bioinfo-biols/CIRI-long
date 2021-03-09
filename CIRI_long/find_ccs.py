@@ -263,7 +263,7 @@ def circular_finder(read_id, seq, k=8, use_hpc=True, p_match=.85, p_indel=.1, d_
 
 
 def find_consensus(header, seq):
-    from CIRI.poa import consensus
+    from spoa import poa
     from Levenshtein import distance
 
     # Trim sequence
@@ -293,9 +293,7 @@ def find_consensus(header, seq):
         return None, None, None
 
     fasta = [seq[s:e] for s, e in chains]
-    ccs = consensus(fasta, alignment_type=2,
-                    match=10, mismatch=-4, gap=-8, extension=-2, gap_affine=-24, extension_affine=-1,
-                    debug=0)
+    ccs, _ = poa(fasta, 2, False, 10, -4, -8, -2, -24, -1)
 
     # Check segment similarity
     tail = fasta[-1]
@@ -326,8 +324,8 @@ def worker(chunk):
 def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
     import gzip
     from multiprocessing import Pool
-    from CIRI.utils import to_str
-    from CIRI.logger import ProgressBar
+    from CIRI_long.utils import to_str
+    from CIRI_long.logger import ProgressBar
     pool = Pool(threads)
     jobs = []
 
@@ -338,6 +336,10 @@ def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
         is_fastq = 0
         is_gz = 0
         fq = open(in_file, 'r')
+    elif in_file.endswith('.fa.gz') or in_file.endswith('.fasta.gz'):
+        is_fastq = 0
+        is_gz = 1
+        fq = gzip.open(in_file, 'rb')
     elif in_file.endswith('.fq') or in_file.endswith('.fastq'):
         is_gz = 0
         fq = open(in_file, 'r')

@@ -7,12 +7,12 @@ from collections import defaultdict
 
 
 def call(args):
-    from CIRI.logger import get_logger
-    from CIRI.utils import check_file, check_dir
-    from CIRI.align import index_annotation
-    from CIRI.find_ccs import find_ccs_reads, load_ccs_reads
-    from CIRI.find_bsj import scan_ccs_reads, recover_ccs_reads
-    from CIRI.find_bsj import scan_raw_reads
+    from CIRI_long.logger import get_logger
+    from CIRI_long.utils import check_file, check_dir
+    from CIRI_long.align import index_annotation
+    from CIRI_long.find_ccs import find_ccs_reads, load_ccs_reads
+    from CIRI_long.find_bsj import scan_ccs_reads, recover_ccs_reads
+    from CIRI_long.find_bsj import scan_raw_reads
 
     if args.input is None or args.output is None:
         sys.exit('Please provide input and output file, run CIRI-long using -h or --help for detailed information.')
@@ -99,10 +99,10 @@ def call(args):
 
 
 def collapse(args):
-    from CIRI.logger import get_logger
-    from CIRI.utils import check_file, check_dir
-    from CIRI.align import index_annotation
-    from CIRI import collapse
+    from CIRI_long.logger import get_logger
+    from CIRI_long.utils import check_file, check_dir
+    from CIRI_long.align import index_annotation
+    from CIRI_long import collapse
 
     if args.input is None or args.output is None:
         sys.exit('Please provide input and output file, run CIRI-long using -h or --help for detailed information.')
@@ -187,7 +187,7 @@ def collapse(args):
 
 def main():
     import argparse
-    from CIRI.version import __version__
+    from CIRI_long.version import __version__
 
     # Init parser
     parser = argparse.ArgumentParser()

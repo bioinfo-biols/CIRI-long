@@ -5,8 +5,8 @@ import logging
 from collections import defaultdict
 
 import pysam
-from CIRI import env
-from CIRI.utils import *
+from CIRI_long import env
+from CIRI_long.utils import *
 
 LOGGER = logging.getLogger('CIRI-long')
 
@@ -227,7 +227,7 @@ def index_annotation(gtf):
     """
     Generate binned index for element in gtf
     """
-    from CIRI.utils import tree
+    from CIRI_long.utils import tree
 
     LOGGER.info('Loading annotation gtf ..')
     gtf_index = defaultdict(dict)

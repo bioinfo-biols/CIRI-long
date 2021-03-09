@@ -6,10 +6,10 @@ from multiprocessing import Pool
 from collections import defaultdict
 
 import pysam
-from CIRI import env
-from CIRI.align import *
-from CIRI.logger import ProgressBar
-from CIRI.utils import grouper, revcomp
+from CIRI_long import env
+from CIRI_long.align import *
+from CIRI_long.logger import ProgressBar
+from CIRI_long.utils import grouper, revcomp
 
 LOGGER = logging.getLogger('CIRI-long')
 
@@ -491,11 +491,9 @@ def recover_ccs_reads(short_reads, ref_fasta, ss_index, gtf_index, intron_index,
 
 
 def check_read(segments, seq):
-    from CIRI.poa import consensus
+    from spoa import poa
     fasta = [seq[int(i.split('-')[0]):int(i.split('-')[1])] for i in segments.split(';')]
-    consensus(fasta, alignment_type=1,
-              match=1, mismatch=-1, gap=-1, extension=-1, gap_affine=-1, extension_affine=-1,
-              debug=1)
+    poa(fasta, 1, True, -1, -1, -1, -1, -1)
 
 
 def scan_raw_chunk(chunk, is_canonical, circ_reads):
@@ -625,7 +623,7 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
 def scan_raw_reads(in_file, ref_fasta, gtf_index, intron_index, ss_index, is_canonical, out_dir, prefix, threads):
     import gzip
     import mappy as mp
-    from CIRI.utils import to_str
+    from CIRI_long.utils import to_str
 
     circ_reads = {}
     with open('{}/{}.cand_circ.fa'.format(out_dir, prefix), 'r') as f:
@@ -641,6 +639,10 @@ def scan_raw_reads(in_file, ref_fasta, gtf_index, intron_index, ss_index, is_can
         is_fastq = 0
         is_gz = 0
         fq = open(in_file, 'r')
+    elif in_file.endswith('.fa.gz') or in_file.endswith('.fasta.gz'):
+        is_fastq = 0
+        is_gz = 1
+        fq = gzip.open(in_file, 'rb')
     elif in_file.endswith('.fq') or in_file.endswith('.fastq'):
         is_gz = 0
         fq = open(in_file, 'r')

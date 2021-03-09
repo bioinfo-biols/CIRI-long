@@ -17,9 +17,6 @@ help:
 	@echo "       clean python cache files"
 
 lib:
-	mkdir -p vendor/spoa/build
-	cd vendor/spoa/build && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON .. && make
-	cd vendor/bwapy && make bwa/libbwa.a && python setup.py install
 	cd libs/striped_smith_waterman && make libssw.so
 
 prepare:
