@@ -9,7 +9,7 @@ Circular RNA Identification for Long-Reads Nanopore Sequencing Data
 
 ### Documentation
 
-Documentation is available oneline at https://github.com/bioinfo-biols/CIRI-long/wiki
+Documentation is available online at https://github.com/bioinfo-biols/CIRI-long/wiki
 
 ### Author
 
@@ -19,7 +19,7 @@ Maintainer: Jinyang Zhang
 
 ### Release Notes
 
-- version 1.0: first released version
+- version 1.0: First released version
 
 ### License
 
