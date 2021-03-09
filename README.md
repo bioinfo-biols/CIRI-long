@@ -17,7 +17,7 @@ Maintainer: Jinyang Zhang
 
 ### Release Notes
 
-- version 0.6.0: Update wiki
+- version 1.0: first released version
 
 ### License
 
