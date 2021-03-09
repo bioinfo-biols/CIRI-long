@@ -242,7 +242,10 @@ def main():
     args = parser.parse_args()
 
     # Run function
-    args.func(args)
+    try:
+        args.func(args)
+    except AttributeError as e:
+        parser.print_help()
 
 
 if __name__ == '__main__':
