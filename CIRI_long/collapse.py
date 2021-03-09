@@ -265,7 +265,7 @@ def correct_cluster(cluster, is_debug=False, max_cluster=200):
         tmp = transform_seq(query.seq, alignment.query_begin)
         junc_seqs.append(get_junc_seq(tmp, -max(head_pos)//2, 25))
 
-    cs_junc = poa(junc_seqs, 2, False, 10, -4, -8, -2, -24, -1)
+    cs_junc, _ = poa(junc_seqs, 2, False, 10, -4, -8, -2, -24, -1)
 
     ctg = Counter([i.circ_id.split(':')[0] for i in cluster]).most_common()[0][0]
     tmp_st = [int(i.circ_id.split(':')[1].split('-')[0]) for i in cluster]

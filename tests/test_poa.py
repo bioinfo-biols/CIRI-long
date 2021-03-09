@@ -11,8 +11,8 @@ def test_poa():
         ('579-721', 'TCCCGGTCATCATAACCCCGATCGTACCCATAATAGTCTCGGCGAGAACTGCCACTGTAAATCCTGATCCCTGTCTTGAGCTGCTCTCCATCCACCTCCTCCACCACCTCCTCCTCTGTATGATCTGCTGTAATAG'),
         ('721-742', 'TCCGGTCATCATAACCCCGATCCATAATAGTCTCGGCG'),
     )
-    ccs = poa([i[1] for i in fasta], 0, True, 10, -4, -8, -2, -24, -1)
-    print(ccs)
+    ccs, msa = poa([i[1] for i in fasta], 0, True, 10, -4, -8, -2, -24, -1)
+    print(ccs, msa)
 
 
 if __name__ == '__main__':

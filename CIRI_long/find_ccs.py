@@ -293,7 +293,7 @@ def find_consensus(header, seq):
         return None, None, None
 
     fasta = [seq[s:e] for s, e in chains]
-    ccs = poa(fasta, 2, False, 10, -4, -8, -2, -24, -1)
+    ccs, _ = poa(fasta, 2, False, 10, -4, -8, -2, -24, -1)
 
     # Check segment similarity
     tail = fasta[-1]
