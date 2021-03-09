@@ -336,6 +336,10 @@ def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
         is_fastq = 0
         is_gz = 0
         fq = open(in_file, 'r')
+    elif in_file.endswith('.fa.gz') or in_file.endswith('.fasta.gz'):
+        is_fastq = 0
+        is_gz = 1
+        fq = gzip.open(in_file, 'rb')
     elif in_file.endswith('.fq') or in_file.endswith('.fastq'):
         is_gz = 0
         fq = open(in_file, 'r')
