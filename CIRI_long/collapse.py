@@ -4,10 +4,10 @@ import numpy as np
 from multiprocessing import Pool
 from collections import defaultdict, Counter, namedtuple
 
-from CIRI import env
-from CIRI.align import *
-from CIRI.utils import *
-from CIRI.logger import ProgressBar
+from CIRI_long import env
+from CIRI_long.align import *
+from CIRI_long.utils import *
+from CIRI_long.logger import ProgressBar
 
 
 LOGGER = logging.getLogger('CIRI-long')
@@ -418,7 +418,7 @@ def correct_cluster(cluster, is_debug=False, max_cluster=200):
 
 
 def batch_cluster_sequence(circ_id, x):
-    from CIRI.find_ccs import compress_seq
+    from CIRI_long.find_ccs import compress_seq
     sequence = {}
     hpc_freq = []
     for read_id, read_seq in x:

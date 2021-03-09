@@ -6,10 +6,10 @@ from multiprocessing import Pool
 from collections import defaultdict
 
 import pysam
-from CIRI import env
-from CIRI.align import *
-from CIRI.logger import ProgressBar
-from CIRI.utils import grouper, revcomp
+from CIRI_long import env
+from CIRI_long.align import *
+from CIRI_long.logger import ProgressBar
+from CIRI_long.utils import grouper, revcomp
 
 LOGGER = logging.getLogger('CIRI-long')
 
@@ -623,7 +623,7 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
 def scan_raw_reads(in_file, ref_fasta, gtf_index, intron_index, ss_index, is_canonical, out_dir, prefix, threads):
     import gzip
     import mappy as mp
-    from CIRI.utils import to_str
+    from CIRI_long.utils import to_str
 
     circ_reads = {}
     with open('{}/{}.cand_circ.fa'.format(out_dir, prefix), 'r') as f:

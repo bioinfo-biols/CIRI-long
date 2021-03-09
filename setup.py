@@ -3,7 +3,7 @@
 import os
 import sys
 
-sys.path.append('CIRI')
+sys.path.append('CIRI_long')
 
 import codecs
 
@@ -11,7 +11,7 @@ import codecs
 from setuptools import setup, Extension, find_packages
 from setuptools.command.build_ext import build_ext
 from Cython.Build import cythonize
-from CIRI.version import __version__
+from CIRI_long.version import __version__
 
 
 def read(infile):
@@ -34,7 +34,7 @@ setup(
     packages=find_packages(exclude=['doc', 'tests']),
     entry_points={
         'console_scripts': [
-            'CIRI-long=CIRI.main:main',
+            'CIRI-long=CIRI_long.main:main',
         ]
     },
     include_package_data=True,

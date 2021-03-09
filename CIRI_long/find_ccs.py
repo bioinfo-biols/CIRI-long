@@ -324,8 +324,8 @@ def worker(chunk):
 def find_ccs_reads(in_file, out_dir, prefix, threads, debugging):
     import gzip
     from multiprocessing import Pool
-    from CIRI.utils import to_str
-    from CIRI.logger import ProgressBar
+    from CIRI_long.utils import to_str
+    from CIRI_long.logger import ProgressBar
     pool = Pool(threads)
     jobs = []
 
