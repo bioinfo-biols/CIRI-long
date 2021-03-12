@@ -4,13 +4,13 @@ import os
 import sys
 sys.path.append('CIRI_long')
 import codecs
+from pathlib import Path
+from subprocess import getstatusoutput
 from setuptools import setup, Extension, find_packages
 from setuptools.command.build_ext import build_ext
-from Cython.Build import cythonize
-from distutils.command.install import install
+from setuptools.command.install import install
+
 from CIRI_long.version import __version__
-from subprocess import getstatusoutput
-from pathlib import Path
 
 
 class CustomInstall(install):
