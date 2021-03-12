@@ -25,3 +25,7 @@ Maintainer: Jinyang Zhang
 ### License
 
 The code is released under the MIT License. See the `LICENSE` file for more detail
+
+### Citing CIRI-long
+
+Zhang, J., Hou, L., Zuo, Z., Ji, P., Zhang, X., Xue, Y., & Zhao, F. (2021). Comprehensive profiling of circular RNAs with nanopore sequencing and CIRI-long. Nature Biotechnology. https://doi.org/10.1038/s41587-021-00842-6
