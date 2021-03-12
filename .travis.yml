@@ -18,7 +18,7 @@ install:
 script:
   - CIRI-long --version
   - python3 setup.py build_ext --inplace
-	- python3 setup.py test
+  - python3 setup.py test
 
 notifications:
   pushover:
