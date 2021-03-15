@@ -504,7 +504,7 @@ def cluster_sequence(hpc_freq, sequence):
         cluster_seq = [sequence[i] for i in cluster_reads]
 
         # Generate consensus sequence
-        ccs = poa(cluster_seq, 2, False, 10, -4, -8, -2, -24, -1)
+        ccs, _ = poa(cluster_seq, 2, False, 10, -4, -8, -2, -24, -1)
         ccs_seq.append((ccs, cluster_reads))
     return ccs_seq
 

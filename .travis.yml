@@ -14,11 +14,16 @@ install:
   - conda activate CIRI-long
   - travis_retry pip install -r requirements.txt
   - python setup.py install
+  - wget https://github.com/bioinfo-biols/CIRI-long/releases/download/v1.0/CIRI-long_test_data_v2.tar.gz
+  - tar zxvf CIRI-long_test_data_v2.tar.gz
 
 script:
   - CIRI-long --version
   - python3 setup.py build_ext --inplace
   - python3 setup.py test
+  - cd test_data
+  - CIRI-long call -i test_reads.fa -o ./test_call -r mm10_chr12.fa -p test -a mm10_chr12.gtf -t 2
+  - CIRI-long collapse -i ./test.list -o test_collapse -r mm10_chr12.fa -p test -a mm10_chr12.gtf -t 2
 
 notifications:
   pushover:
