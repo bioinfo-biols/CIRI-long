@@ -23,7 +23,7 @@ script:
   - python3 setup.py test
   - cd test_data
   - CIRI-long call -i test_reads.fa -o ./test_call -r mm10_chr12.fa -p test -a mm10_chr12.gtf -t 2
-  - echo "test /home/travis/test_data/test_call/test.cand_circ.fa" > ./test.list
+  - echo "test ./test_call/test.cand_circ.fa" > ./test.list
   - CIRI-long collapse -i ./test.list -o test_collapse -r mm10_chr12.fa -p test -a mm10_chr12.gtf -t 2
 
 notifications:
