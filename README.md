@@ -20,6 +20,8 @@ Maintainer: Jinyang Zhang
 
 ### Release Notes
 
+- version 1.0.2: Add fast mode for ccs detection
+- version 1.0.1: Fixed bug
 - version 1.0: First released version
 
 ### License
