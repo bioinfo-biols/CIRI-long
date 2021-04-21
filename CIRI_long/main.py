@@ -13,6 +13,10 @@ def call(args):
     from CIRI_long.find_ccs import find_ccs_reads, load_ccs_reads
     from CIRI_long.find_bsj import scan_ccs_reads, recover_ccs_reads
     from CIRI_long.find_bsj import scan_raw_reads
+    from CIRI_long.pipeline import run_ccs
+
+    lib_path = os.path.dirname(os.path.split(os.path.realpath(__file__))[0]) + '/libs'
+    os.environ['PATH'] = lib_path + ':' + os.environ['PATH']
 
     if args.input is None or args.output is None:
         sys.exit('Please provide input and output file, run CIRI-long using -h or --help for detailed information.')
@@ -39,15 +43,21 @@ def call(args):
 
     # Scan for repeats and CCS
     reads_count = defaultdict(int)
+    
     if not debugging and os.path.exists('{}/tmp/{}.ccs.fa'.format(out_dir, prefix)) and os.path.exists('{}/tmp/{}.raw.fa'.format(out_dir, prefix)):
         logger.info('Step 1 - Loading circRNA candidates in previous run')
         ccs_seq = load_ccs_reads(out_dir, prefix)
         reads_count['consensus'] = len(ccs_seq)
     else:
-        logger.info('Step 1 - Scanning raw reads to find circRNA candidates')
-        total_reads, ro_reads, ccs_seq = find_ccs_reads(in_file, out_dir, prefix, threads, debugging)
-        reads_count['total'] = total_reads
-        reads_count['consensus'] = ro_reads
+        try:
+            run_ccs(in_file, out_dir, prefix, threads, debugging)
+            ccs_seq = load_ccs_reads(out_dir, prefix)
+            reads_count['consensus'] = len(ccs_seq)
+        except Exception as e:
+            logger.warn('Failed to run ccs command in fast mode, falling back to slower python version.')
+            total_reads, ro_reads, ccs_seq = find_ccs_reads(in_file, out_dir, prefix, threads, debugging)
+            reads_count['total'] = total_reads
+            reads_count['consensus'] = ro_reads
 
     if 'total' in reads_count:
         logger.info('Total Reads: {}'.format(reads_count['total']))
