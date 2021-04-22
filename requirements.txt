@@ -1,4 +1,4 @@
-argparse==1.2.1
+argparse>=1.2.1
 Cython==0.29.13
 mappy==2.17
 numpy==1.17.0
