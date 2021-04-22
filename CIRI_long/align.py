@@ -272,6 +272,50 @@ def index_annotation(gtf):
     return gtf_index, intron_index, splice_site_index
 
 
+def index_circ(circ_file, circ_ss_idx):
+    """
+    Generate binned index for element in gtf
+    """
+    from CIRI_long.utils import tree
+    from pathlib import Path
+
+    circ_path = Path(circ_file)
+    if circ_ss_idx is None:
+        circ_ss_idx = tree()
+
+    if circ_path.suffix == ".gtf":
+        LOGGER.info('Loading additional circRNA gtf ..')
+        with open(circ_path, 'r') as f:
+            for line in f:
+                if line.startswith('#'):
+                    continue
+                content = line.rstrip().split('\t')
+                parser = GTFParser(content)
+                circ_ss_idx[parser.contig][parser.start][parser.strand]['start'] = 1
+                circ_ss_idx[parser.contig][parser.end][parser.strand]['end'] = 1
+    elif circ_path.suffix == ".bed":
+        LOGGER.info('Loading additional circRNA bed ..')
+        n_skip = 0
+        with open(circ_path, 'r') as f:
+            for line in f:
+                content = line.rstrip().split('\t')
+                contig = content[0]
+                try:
+                    start = int(content[1])
+                    end = int(content[2])
+                except ValueError:
+                    n_skip += 1
+                    continue
+                strand = content[3]
+                circ_ss_idx[contig][start][strand]['start'] = 1
+                circ_ss_idx[contig][end][strand]['end'] = 1
+        LOGGER.warn('Skipping {} lines in bed file'.format(n_skip))
+    else:
+        sys.exit('{} is not a valid bed/gtf file'.format(str(circ_path)))
+
+    return circ_ss_idx
+
+
 def get_blocks(hit):
     """
     Get blocks of aligned segments

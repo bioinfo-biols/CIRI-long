@@ -9,7 +9,7 @@ from collections import defaultdict
 def call(args):
     from CIRI_long.logger import get_logger
     from CIRI_long.utils import check_file, check_dir
-    from CIRI_long.align import index_annotation
+    from CIRI_long.align import index_annotation, index_circ
     from CIRI_long.find_ccs import find_ccs_reads, load_ccs_reads
     from CIRI_long.find_bsj import scan_ccs_reads, recover_ccs_reads
     from CIRI_long.find_bsj import scan_raw_reads
@@ -17,6 +17,7 @@ def call(args):
 
     lib_path = os.path.dirname(os.path.split(os.path.realpath(__file__))[0]) + '/libs'
     os.environ['PATH'] = lib_path + ':' + os.environ['PATH']
+    os.chmod(lib_path + '/ccs', 0o755)
 
     if args.input is None or args.output is None:
         sys.exit('Please provide input and output file, run CIRI-long using -h or --help for detailed information.')
@@ -26,6 +27,7 @@ def call(args):
     # Check parameters
     in_file = check_file(args.input)
     gtf_file = None if args.gtf is None else check_file(args.gtf)
+    circ_file = None if args.circ is None else check_file(args.circ)
     out_dir = check_dir(args.output)
     ref_fasta = check_file(args.reference)
     check_dir(out_dir + '/tmp')
@@ -73,8 +75,8 @@ def call(args):
     logger.info('Cyclic Consensus Reads: {}'.format(reads_count['consensus']))
 
     # generate index of splice site and annotation
-    if gtf_file is None:
-        logger.warn('No genome annotation provided, entering \'De novo\' mode')
+    if gtf_file is None and circ_file is None:
+        logger.warn('No annotation provided, entering \'De novo\' mode')
         gtf_idx, ss_idx = None, None
     else:
         idx_file = out_dir + '/tmp/ss.idx'
@@ -83,7 +85,13 @@ def call(args):
             with open(idx_file, 'rb') as idx:
                 gtf_idx, intron_idx, ss_idx = pickle.load(idx)
         else:
-            gtf_idx, intron_idx, ss_idx = index_annotation(gtf_file)
+            if gtf_file is not None:
+                gtf_idx, intron_idx, ss_idx = index_annotation(gtf_file)
+            else:
+                gtf_idx, intron_idx, ss_idx = None, None, None
+            if circ_file is not None:
+                ss_idx = index_circ(circ_file, ss_idx)
+
             with open(idx_file, 'wb') as idx:
                 pickle.dump([gtf_idx, intron_idx, ss_idx], idx, -1)
 
@@ -120,7 +128,7 @@ def call(args):
 def collapse(args):
     from CIRI_long.logger import get_logger
     from CIRI_long.utils import check_file, check_dir
-    from CIRI_long.align import index_annotation
+    from CIRI_long.align import index_annotation, index_circ
     from CIRI_long import collapse
 
     if args.input is None or args.output is None:
@@ -132,6 +140,7 @@ def collapse(args):
     prefix = args.prefix
 
     gtf_file = None if args.gtf is None else check_file(args.gtf)
+    circ_file = None if args.circ is None else check_file(args.circ)
     ref_fasta = check_file(args.reference)
 
     threads = int(args.threads)
@@ -146,8 +155,8 @@ def collapse(args):
     logger.info('-------------- Collapse circular reads -------------')
 
     # generate index of splice site and annotation
-    if gtf_file is None:
-        logger.warn('No genome annotation provided, entering \'De novo\' mode')
+    if gtf_file is None and circ_file is None:
+        logger.warn('No annotation provided, entering \'De novo\' mode')
         gtf_idx, ss_idx = None, None
     else:
         idx_file = out_dir + '/tmp/ss.idx'
@@ -156,7 +165,13 @@ def collapse(args):
             with open(idx_file, 'rb') as idx:
                 gtf_idx, intron_idx, ss_idx = pickle.load(idx)
         else:
-            gtf_idx, intron_idx, ss_idx = index_annotation(gtf_file)
+            if gtf_file is not None:
+                gtf_idx, intron_idx, ss_idx = index_annotation(gtf_file)
+            else:
+                gtf_idx, intron_idx, ss_idx = None, None, None
+            if circ_file is not None:
+                ss_idx = index_circ(circ_file, ss_idx)
+
             with open(idx_file, 'wb') as idx:
                 pickle.dump([gtf_idx, intron_idx, ss_idx], idx, -1)
 
@@ -227,11 +242,13 @@ def main():
     call_parser.add_argument('-p', '--prefix', dest='prefix', metavar='PREFIX', default="CIRI-long",
                              help='Output sample prefix, (default: %(default)s)', )
     call_parser.add_argument('-a', '--anno', dest='gtf', metavar='GTF', default=None,
-                             help='Genome reference gtf', )
+                             help='Genome reference gtf, (optional)', )
+    call_parser.add_argument('-c', '--circ', dest='circ', metavar='CIRC', default=None,
+                             help='Additional circRNA annotation in bed/gtf format, (optional)', )
     call_parser.add_argument('--canonical', dest='canonical', default=True, action='store_true',
                              help='Use canonical splice signal (GT/AG) only, default: %(default)s)')
     call_parser.add_argument('-t', '--threads', dest='threads', metavar='INT', default=os.cpu_count(),
-                             help='Number of threads', )
+                             help='Number of threads, (default: use all cores)', )
     call_parser.add_argument('--debug', dest='debug', default=False, action='store_true',
                              help='Run in debugging mode, (default: %(default)s)', )
     call_parser.set_defaults(func=call)
@@ -247,11 +264,13 @@ def main():
     collapse_parser.add_argument('-r', '--ref', dest='reference', metavar='REF', default=None,
                                  help='Reference genome FASTA file', )
     collapse_parser.add_argument('-a', '--anno', dest='gtf', metavar='GTF', default=None,
-                                 help='Genome reference gtf', )
+                                 help='Genome reference gtf, (optional)', )
+    collapse_parser.add_argument('-c', '--circ', dest='circ', metavar='CIRC', default=None,
+                                 help='Additional circRNA annotation in bed/gtf format, (optional)', )
     collapse_parser.add_argument('--canonical', dest='canonical', default=True, action='store_true',
                                  help='Use canonical splice signal (GT/AG) only, default: %(default)s)')
     collapse_parser.add_argument('-t', '--threads', dest='threads', metavar='INT', default=os.cpu_count(),
-                                 help='Number of threads', )
+                                 help='Number of threads, (default: use all cores)', )
     collapse_parser.add_argument('--debug', dest='debug', default=False, action='store_true',
                                  help='Run in debugging mode, (default: %(default)s)', )
 

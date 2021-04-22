@@ -121,7 +121,7 @@ def collapse_hits(hits):
     """
     collapsed = []
     for i, j in zip(hits[:-1], hits[1:]):
-        if j[0] == i[0] + 1 and j[1] == i[0]:
+        if j[0] == i[0] + 1 and j[1] == i[1]:
             continue
         else:
             collapsed.append(j)
@@ -265,6 +265,9 @@ def circular_finder(read_id, seq, k=8, use_hpc=True, p_match=.85, p_indel=.1, d_
 def find_consensus(header, seq):
     from spoa import poa
     from Levenshtein import distance
+
+    # if header not in 'ENSMUST00000021181|ENSMUSG00000020831|11:70236877-70237625|-|197_1126_aligned_43558_F_52_821_60':
+    #     return None, None, None
 
     # Trim sequence
     if len(seq) <= 50:
