@@ -403,7 +403,7 @@ def correct_cluster(cluster, is_debug=False, max_cluster=200):
     curated_exons = curate_cirexons(circ, cluster)
     if curated_exons is None:
         return None
-    isoforms, circ_len = curate_isoform(circ, curated_exons, cluster_res)
+    isoforms, isoform_reads, circ_len = curate_isoform(circ, curated_exons, cluster_res)
     if isoforms is None:
         return None
     is_concordance = check_isoforms(circ, isoforms)
@@ -413,7 +413,7 @@ def correct_cluster(cluster, is_debug=False, max_cluster=200):
     if is_debug:
         return circ
 
-    return circ_type, ([i.read_id for i in cluster], cluster_seq, circ_id, circ.strand,
+    return circ_type, ([i.read_id for i in cluster], isoform_reads, cluster_seq, circ_id, circ.strand,
                        ss_id, us_free, ds_free, circ_len, isoforms)
 
 
@@ -697,7 +697,7 @@ def curate_isoform(circ, curated_exons, cluster_res):
         else:
             final_isoforms[tmp_isoform] = [tmp_len, tmp_ids]
     if len(final_isoforms) == 0:
-        return None, None
+        return None, None, None
 
     total_cnt = sum([len(i[1]) for i in final_isoforms])
     ret = sorted(list(final_isoforms),
@@ -705,7 +705,8 @@ def curate_isoform(circ, curated_exons, cluster_res):
                  reverse=True)
     major_len = final_isoforms[ret[0]][0]
     major_isoforms = [i for i in ret if len(final_isoforms[i][1]) >= 0.1 * total_cnt]
-    return major_isoforms, major_len
+    major_reads = [final_isoforms[i][1] for i in major_isoforms]
+    return major_isoforms, major_reads, major_len
 
 
 def merge_isoforms(circ, curated_exons, seq, ids):
@@ -896,17 +897,24 @@ def by_circ(x):
     return idx, ctg, int(st), int(en)
 
 
+def by_isoform(x):
+    circ_id, iso_id = x.split('|')
+    idx, ctg, st, en = by_circ(circ_id)
+    return idx, ctg, st, en, iso_id
+
+
 def cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix):
     from collections import Counter
 
     genome = Fasta(ref_fasta)
 
     circ_reads = defaultdict(list)
+    isoform_reads = defaultdict(dict)
     circ_info = {}
     reads_df = []
 
     # with open('{}/{}.fa'.format(out_dir, prefix), 'w') as fa:
-    for reads, seqs, circ_id, strand, ss_id, us_free, ds_free, circ_len, isoforms in corrected_reads:
+    for reads, tmp_iso_reads, seqs, circ_id, strand, ss_id, us_free, ds_free, circ_len, isoforms in corrected_reads:
         # for tmp_id, tmp_seq in zip(reads, seqs):
         #     fa.write('>{}\t{}\t{}\n{}\n'.format(tmp_id, circ_id, strand, tmp_seq))
 
@@ -931,6 +939,8 @@ def cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix
 
         # Expression levels
         circ_reads[circ_id] += reads
+        for i, j in zip(isoforms, tmp_iso_reads):
+            isoform_reads[circ_id][i] = isoform_reads[circ_id].setdefault(i, []) + j
 
         # Corrected reads
         for read_id in reads:
@@ -959,7 +969,15 @@ def cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix
     exp_df = pd.DataFrame.from_dict(exp_df).transpose().fillna(0).reindex(sorted_circ)
     exp_df.to_csv('{}/{}.expression'.format(out_dir, prefix), sep="\t", index_label='circ_ID')
 
-    return len(sorted_circ)
+    isoform_df = {}
+    for circ_id in isoform_reads:
+        for iso_id, reads in isoform_reads[circ_id].items():
+            isoform_df['{}|{}'.format(circ_id, iso_id)] = Counter([cand_reads[i].sample for i in reads])
+    sorted_iso = sorted(list(isoform_df), key=by_isoform)
+    isoform_df = pd.DataFrame.from_dict(isoform_df).transpose().fillna(0).reindex(sorted_iso)
+    isoform_df.to_csv('{}/{}.isoforms'.format(out_dir, prefix), sep="\t", index_label='isoform_ID')
+
+    return len(sorted_circ), len(sorted_iso)
 
 
 def equivalent_seq(genome, contig, start, end, strand):

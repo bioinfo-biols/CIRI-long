@@ -199,8 +199,8 @@ def collapse(args):
             circ_num['High confidence lariat'], circ_num['Unknown signal']))
 
     logger.info('Step 2 - Calculating expression matrix')
-    circ_cnt = collapse.cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix)
-    logger.info('Final circRNAs: {}'.format(circ_cnt))
+    circ_cnt, iso_cnt = collapse.cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix)
+    logger.info('Final circRNAs: {}, isoforms: {}'.format(circ_cnt, iso_cnt))
 
     # # Find circRNAs again
     # logger.info('Correct circRNAs from consensus reads!')
