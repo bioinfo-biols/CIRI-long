@@ -414,13 +414,13 @@ def load_ccs_reads(out_dir, prefix):
     with open('{}/tmp/{}.ccs.fa'.format(out_dir, prefix), 'r') as f:
         for line in f:
             header = line.rstrip()
-            content = header.split('\t')
+            content = header.split()
             seq = f.readline().rstrip()
             ccs_seq[content[0].lstrip('>')] = [content[1], seq]
 
     with open('{}/tmp/{}.raw.fa'.format(out_dir, prefix), 'r') as f:
         for line in f:
-            header = line.rstrip().split('\t')[0].lstrip('>')
+            header = line.rstrip().split()[0].lstrip('>')
             seq = f.readline().rstrip()
             ccs_seq[header].append(seq)
     return ccs_seq

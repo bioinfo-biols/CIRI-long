@@ -12,6 +12,6 @@ def run_ccs(in_file, out_dir, prefix, threads, debugging):
     )
     with open('{}/{}.log'.format(out_dir, prefix), 'a') as log:
         LOGGER.debug(ccs_cmd)
-        ret = subprocess.call(ccs_cmd, shell=True, stdout=log)
+        ret = subprocess.call(ccs_cmd, shell=True, stdout=log, stderr=log)
 
     return ret
