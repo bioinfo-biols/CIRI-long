@@ -1,3 +1,4 @@
+rm dist/*
 pip install wheel setuptools
 pip install twine
 pip install keyring
