@@ -585,7 +585,7 @@ def scan_raw_chunk(chunk, is_canonical, circ_reads):
         try:
             ss_site, us_free, ds_free, tmp_signal = find_annotated_signal(circ_ctg, circ_start, circ_end, clip_base, clip_base + 10)
         except Exception as e:
-            print(e)
+            LOGGER.warn(e)
         if ss_site is None:
             ss_site = find_denovo_signal(circ_ctg, circ_start, circ_end, host_strand, tmp_signal,
                                          us_free, ds_free, clip_base, clip_base + 10, 3, True)

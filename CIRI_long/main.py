@@ -157,7 +157,7 @@ def collapse(args):
     # generate index of splice site and annotation
     if gtf_file is None and circ_file is None:
         logger.warn('No annotation provided, entering \'De novo\' mode')
-        gtf_idx, ss_idx = None, None
+        gtf_idx, intron_idx, ss_idx = None, None, None
     else:
         idx_file = out_dir + '/tmp/ss.idx'
         if os.path.exists(idx_file):
@@ -280,10 +280,10 @@ def main():
     args = parser.parse_args()
 
     # Run function
-    try:
-        args.func(args)
-    except AttributeError as e:
-        parser.print_help()
+    # try:
+    args.func(args)
+    # except AttributeError as e:
+        # parser.print_help()
 
 
 if __name__ == '__main__':

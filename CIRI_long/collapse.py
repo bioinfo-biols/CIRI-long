@@ -175,7 +175,7 @@ def curate_junction(ctg, st, en, junc):
 
 
 def annotated_hit(contig, scores):
-    if contig not in env.SS_INDEX:
+    if env.SS_INDEX is None or contig not in env.SS_INDEX:
         return None
 
     weighted = []
@@ -920,6 +920,11 @@ def cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix
 
         # circRNA information
         ctg, st, en = circ_pos(circ_id)
+
+        # Remove circRNAs shorter than 30 bp
+        if en - st < 30:
+            continue
+
         field = circ_attr(gtf_idx, ctg, st, en, strand)
 
         tmp_attr = 'circ_id "{}"; splice_site "{}"; equivalent_seq "{}"; circ_type "{}"; circ_len "{}";'.format(
@@ -975,7 +980,7 @@ def cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix
             isoform_df['{}|{}'.format(circ_id, iso_id)] = Counter([cand_reads[i].sample for i in reads])
     sorted_iso = sorted(list(isoform_df), key=by_isoform)
     isoform_df = pd.DataFrame.from_dict(isoform_df).transpose().fillna(0).reindex(sorted_iso)
-    isoform_df.to_csv('{}/{}.isoforms'.format(out_dir, prefix), sep="\t", index_label='isoform_ID')
+    # isoform_df.to_csv('{}/{}.isoforms'.format(out_dir, prefix), sep="\t", index_label='isoform_ID')
 
     return len(sorted_circ), len(sorted_iso)
 
@@ -1013,7 +1018,7 @@ def circ_attr(gtf_index, ctg, start, end, strand):
     """
     annotate circRNA information
     """
-    if ctg not in gtf_index:
+    if gtf_index is None or ctg not in gtf_index:
         # LOGGER.warn('chrom of contig "{}" not in annotation gtf, please check'.format(ctg))
         return {}
     start_div, end_div = start // 500, end // 500

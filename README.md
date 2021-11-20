@@ -20,7 +20,7 @@ Maintainer: Jinyang Zhang
 
 ### Release Notes
 
-- version 1.0.3: Fixed bug
+- version 1.0.3: Fixed bugs
 - version 1.0.2: Add fast mode for ccs detection and option for user-provided circRNA annotation
 - version 1.0.1: Fixed bug
 - version 1.0: First released version

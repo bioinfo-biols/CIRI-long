@@ -734,7 +734,7 @@ def sort_ss(sites, us, ds, clip_base):
 
 
 def find_host_gene(ctg, start, end):
-    if ctg not in env.GTF_INDEX:
+    if env.GTF_INDEX is None or ctg not in env.GTF_INDEX:
         return None
     start_div, end_div = start // 500, end // 500
 
@@ -756,7 +756,7 @@ def find_host_gene(ctg, start, end):
 
 
 def find_retained_introns(ctg, start, end):
-    if ctg not in env.INTRON_INDEX:
+    if env.INTRON_INDEX is None or ctg not in env.INTRON_INDEX:
         return None
     start_div, end_div = start // 500, end // 500
 
@@ -775,7 +775,7 @@ def find_retained_introns(ctg, start, end):
 
 
 def find_overlap_exons(ctg, start, end):
-    if ctg not in env.GTF_INDEX:
+    if env.GTF_INDEX is None or ctg not in env.GTF_INDEX:
         return None
     start_div, end_div = start // 500, end // 500
 
