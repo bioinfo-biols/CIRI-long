@@ -740,7 +740,7 @@ def merge_isoforms(circ, curated_exons, seq, ids):
 
     isoform = [exons[i] for i in max_flow]
     isoform_id = ','.join([i for i in isoform[1:-1]])
-    isoform_len = sum([int(i.split('-')[1]) - int(i.split('-')[0]) for i in isoform[1:-1]])
+    isoform_len = sum([int(i.split('-')[1]) - int(i.split('-')[0]) + 1 for i in isoform[1:-1]])
     return isoform_id, isoform_len
 
 
@@ -976,12 +976,17 @@ def cal_exp_mtx(cand_reads, corrected_reads, ref_fasta, gtf_idx, out_dir, prefix
 
     isoform_df = {}
     for circ_id in isoform_reads:
+        tmp_total = []
+        for _, reads in isoform_reads[circ_id].items():
+            tmp_total += [cand_reads[i].sample for i in reads]
+        tmp_total = Counter(tmp_total)
         for iso_id, reads in isoform_reads[circ_id].items():
-            isoform_df['{}|{}'.format(circ_id, iso_id)] = Counter([cand_reads[i].sample for i in reads])
+            tmp_counter = Counter([cand_reads[i].sample for i in reads])
+            tmp_iso = {i: j/tmp_total[i] for i, j in tmp_counter.items()}
+            isoform_df['{}|{}'.format(circ_id, iso_id)] = tmp_iso
     sorted_iso = sorted(list(isoform_df), key=by_isoform)
     isoform_df = pd.DataFrame.from_dict(isoform_df).transpose().fillna(0).reindex(sorted_iso)
-    # isoform_df.to_csv('{}/{}.isoforms'.format(out_dir, prefix), sep="\t", index_label='isoform_ID')
-
+    isoform_df.to_csv('{}/{}.isoforms'.format(out_dir, prefix), sep="\t", index_label='isoform_ID')
     return len(sorted_circ), len(sorted_iso)
 
 

@@ -20,7 +20,7 @@ Maintainer: Jinyang Zhang
 
 ### Release Notes
 
-- version 1.0.3: Fixed bugs
+- version 1.0.3: Add output of circRNA isoform usage index, fixed bugs
 - version 1.0.2: Add fast mode for ccs detection and option for user-provided circRNA annotation
 - version 1.0.1: Fixed bug
 - version 1.0: First released version
@@ -31,4 +31,4 @@ The code is released under the MIT License. See the `LICENSE` file for more deta
 
 ### Citing CIRI-long
 
-Zhang, J., Hou, L., Zuo, Z., Ji, P., Zhang, X., Xue, Y., & Zhao, F. (2021). Comprehensive profiling of circular RNAs with nanopore sequencing and CIRI-long. Nature Biotechnology. https://doi.org/10.1038/s41587-021-00842-6
+> Zhang, J., Hou, L., Zuo, Z., Ji, P., Zhang, X., Xue, Y., & Zhao, F. (2021). Comprehensive profiling of circular RNAs with nanopore sequencing and CIRI-long. Nature Biotechnology. https://doi.org/10.1038/s41587-021-00842-6

@@ -34,7 +34,8 @@ def call(args):
     prefix = args.prefix
     threads = int(args.threads)
     debugging = args.debug
-    is_canonical = args.canonical
+    # is_canonical = args.canonical
+    is_canonical = True
 
     logger = get_logger('CIRI-long', fname='{}/{}.log'.format(out_dir, prefix), verbosity=debugging)
     logger.info('----------------- Input paramters ------------------')
@@ -145,7 +146,8 @@ def collapse(args):
 
     threads = int(args.threads)
     debugging = args.debug
-    is_canonical = args.canonical
+    # is_canonical = args.canonical
+    is_canonical = True
 
     logger = get_logger('CIRI-long', fname='{}/{}.log'.format(out_dir, prefix), verbosity=debugging)
     logger.info('----------------- Input paramters ------------------')
@@ -245,8 +247,8 @@ def main():
                              help='Genome reference gtf, (optional)', )
     call_parser.add_argument('-c', '--circ', dest='circ', metavar='CIRC', default=None,
                              help='Additional circRNA annotation in bed/gtf format, (optional)', )
-    call_parser.add_argument('--canonical', dest='canonical', default=True, action='store_true',
-                             help='Use canonical splice signal (GT/AG) only, default: %(default)s)')
+    # call_parser.add_argument('--canonical', dest='canonical', default=True, action='store_true',
+    #                          help='Use canonical splice signal (GT/AG) only, default: %(default)s)')
     call_parser.add_argument('-t', '--threads', dest='threads', metavar='INT', default=os.cpu_count(),
                              help='Number of threads, (default: use all cores)', )
     call_parser.add_argument('--debug', dest='debug', default=False, action='store_true',
@@ -267,8 +269,8 @@ def main():
                                  help='Genome reference gtf, (optional)', )
     collapse_parser.add_argument('-c', '--circ', dest='circ', metavar='CIRC', default=None,
                                  help='Additional circRNA annotation in bed/gtf format, (optional)', )
-    collapse_parser.add_argument('--canonical', dest='canonical', default=True, action='store_true',
-                                 help='Use canonical splice signal (GT/AG) only, default: %(default)s)')
+    # collapse_parser.add_argument('--canonical', dest='canonical', default=False, action='store_true',
+    #                              help='Use canonical splice signal (GT/AG) only, default: %(default)s)')
     collapse_parser.add_argument('-t', '--threads', dest='threads', metavar='INT', default=os.cpu_count(),
                                  help='Number of threads, (default: use all cores)', )
     collapse_parser.add_argument('--debug', dest='debug', default=False, action='store_true',
@@ -280,10 +282,11 @@ def main():
     args = parser.parse_args()
 
     # Run function
-    # try:
-    args.func(args)
-    # except AttributeError as e:
-        # parser.print_help()
+    try:
+        func = args.func
+    except AttributeError:
+        parser.error("too few arguments")
+    func(args)
 
 
 if __name__ == '__main__':
