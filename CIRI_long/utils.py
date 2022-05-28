@@ -148,3 +148,12 @@ def shift_base(seq):
         else:
             base += 1
     return base
+
+
+def distance(x, y):
+    import edlib
+    import Levenshtein
+    if len(x) <= 50 or len(y) <= 50:
+        return Levenshtein.distance(x, y)
+    else:
+        return edlib.align(x, y)['editDistance']

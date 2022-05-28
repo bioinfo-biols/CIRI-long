@@ -1,5 +1,3 @@
-import os
-import sys
 import re
 import logging
 from collections import defaultdict
@@ -65,7 +63,6 @@ class GTFParser(object):
         """
         Parsing attribute column in gtf file
         """
-        import re
         field = {}
         for attr_values in [re.split(r'\s+', i.strip()) for i in self.attr_string.split(';')[:-1]]:
             key, value = attr_values[0], attr_values[1:]
@@ -84,7 +81,7 @@ class Hit(object):
         self.strand = 1 if aln.orient == '+' else -1
         self.cigar_string = aln.cigar
         self.r_st = aln.pos
-        self.r_en, self.q_st, self.q_en = self.__parse_cigar()
+        self.r_en, self.q_st, self.q_en, self.blen = self.__parse_cigar()
         self.mlen = self.q_en - self.q_st
         self.is_primary = 0
 
@@ -96,21 +93,24 @@ class Hit(object):
     def __parse_cigar(self):
         r_en = self.r_st
         q_st, q_en = 0, 0
+        blen = 0
         for length, operation in self.cigar:
             if operation == 0:
                 q_en += length
                 r_en += length
+                blen += length
             elif operation == 1:
                 q_en += length
             elif operation in [2, 3]:
                 r_en += length
+                blen += length
             elif operation in [4, 5]:
                 if q_st == 0:
                     q_st = length
                     q_en = length
             else:
                 pass
-        return r_en, q_st, q_en
+        return r_en, q_st, q_en, blen
 
     def __str__(self):
         return '\t'.join([str(x) for x in [self.q_st, self.q_en, self.ctg, self.r_st, self.r_en, self.mlen, self.blen,
@@ -187,7 +187,7 @@ class Faidx(object):
     """
     def __init__(self, infile):
         if not os.path.exists(infile + '.fai'):
-            LOGGER.warn('Index of reference genome not found, generating ...')
+            LOGGER.warning('Index of reference genome not found, generating ...')
         try:
             faidx = pysam.FastaFile(infile)
         except ValueError:
@@ -309,7 +309,7 @@ def index_circ(circ_file, circ_ss_idx):
                 strand = content[3]
                 circ_ss_idx[contig][start][strand]['start'] = 1
                 circ_ss_idx[contig][end][strand]['end'] = 1
-        LOGGER.warn('Skipping {} lines in bed file'.format(n_skip))
+        LOGGER.warning('Skipping {} lines in bed file'.format(n_skip))
     else:
         sys.exit('{} is not a valid bed/gtf file'.format(str(circ_path)))
 

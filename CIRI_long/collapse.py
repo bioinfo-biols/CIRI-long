@@ -154,7 +154,6 @@ def genome_junction_seq(contig, start, end, width=25):
 
 
 def avg_score(alignment, ref, query):
-    from Levenshtein import distance
     x = query[alignment.query_begin:alignment.query_end]
     return distance(ref, x) / len(ref)
 
@@ -460,7 +459,6 @@ def iter_cluster_sequence(circ_id, hpc_freq, sequence):
 def cluster_sequence(hpc_freq, sequence):
     from scipy.cluster.hierarchy import linkage, leaves_list
     from scipy.spatial.distance import squareform
-    from Levenshtein import distance
     from spoa import poa
 
     if len(hpc_freq) == 1:
@@ -998,8 +996,8 @@ def equivalent_seq(genome, contig, start, end, strand):
     for i in range(100):
         if end + i > genome.contig_len[contig]:
             break
-        if genome.seq(contig, start, start + i) == genome.seq(contig, end, end + i):
-            ds_seq += genome.seq(contig, start, start + i)
+        if genome.seq(contig, start-1, start-1 + i) == genome.seq(contig, end, end + i):
+            ds_seq = genome.seq(contig, start-1, start-1 + i)
         else:
             break
 
@@ -1007,12 +1005,12 @@ def equivalent_seq(genome, contig, start, end, strand):
     for j in range(100):
         if start - j < 0:
             break
-        if genome.seq(contig, start - j, start) == genome.seq(contig, end - j, end):
-            us_seq += genome.seq(contig, start - j, start)
+        if genome.seq(contig, start-1 - j, start-1) == genome.seq(contig, end - j, end):
+            us_seq = genome.seq(contig, start-1 - j, start-1)
         else:
             break
 
-    tmp = us_seq[::-1] + ds_seq
+    tmp = us_seq + ds_seq
     if strand == '+':
         return tmp
     else:

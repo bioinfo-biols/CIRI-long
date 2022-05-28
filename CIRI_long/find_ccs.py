@@ -5,6 +5,7 @@ from collections import namedtuple, defaultdict
 LOGGER = logging.getLogger('CIRI-long')
 
 import numpy as np
+from CIRI_long.utils import distance
 
 
 def collect_kmers(seq, k=8, use_hpc=False, is_circular=False):
@@ -95,7 +96,6 @@ def optimal_hit(kmers, seed, s, e, use_hpc):
     """
     Return hit with smallest distance and nearest to optimal distance
     """
-    from Levenshtein import distance
     from operator import itemgetter
 
     hits = []
