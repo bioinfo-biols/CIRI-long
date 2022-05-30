@@ -157,3 +157,11 @@ def distance(x, y):
         return Levenshtein.distance(x, y)
     else:
         return edlib.align(x, y)['editDistance']
+
+
+def compress_seq(seq):
+    hpc = [seq[0], ]
+    for x, (i, j) in enumerate(zip(seq[:-1], seq[1:])):
+        if i != j:
+            hpc.append(j)
+    return ''.join(hpc)

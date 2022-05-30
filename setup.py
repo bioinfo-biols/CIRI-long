@@ -51,9 +51,9 @@ setup(
     include_package_data=True,
     zip_safe=False,
     install_requires=[
-        'argparse>=1.2.1', 'Cython==0.29.13', 'mappy==2.17', 'numpy==1.17.0', 'pandas==0.25.0',
-        'pysam==0.15.3', 'python-Levenshtein==0.12.1', 'scikit-learn==0.21.3', 'scipy==1.3.1',
-        'biopython==1.76', 'pyspoa==0.0.5', 'bwapy==0.1.4', 'edlib==1.3.9'
+        'argparse>=1.2.1', 'Cython>=0.29.13', 'mappy>=2.17', 'numpy>=1.17.0', 'pandas>=0.25.0',
+        'pysam>=0.15.3', 'python-Levenshtein>=0.12.1', 'scikit-learn>=0.21.3', 'scipy>=1.3.1',
+        'biopython>=1.76', 'pyspoa>=0.0.5', 'bwapy>=0.1.4', 'edlib>=1.3.9', 'pyccs>=1.1.0',
     ],
     test_suite="nose.collector",
     tests_require=['nose==1.3.7'],

@@ -1,0 +1,30 @@
+name: test-CIRI-long
+
+on: [push]
+
+jobs:
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.7'
+
+      - name: Python unit tests
+        run: |
+          python3 -m venv venv3
+          source venv3/bin/activate
+          python3 -m pip install -r requirements.txt
+          python3 setup.py build_ext --inplace
+          python3 setup.py test
+          python3 setup.py install
+          CIRI-long --version
+          wget https://github.com/bioinfo-biols/CIRI-long/releases/download/v1.0/CIRI-long_test_data_v2.tar.gz
+          tar zxvf CIRI-long_test_data_v2.tar.gz
+          cd test_data
+          CIRI-long call -i test_reads.fa -o ./test_call -r mm10_chr12.fa -p test -a mm10_chr12.gtf -t 2
+          echo "test ./test_call/test.cand_circ.fa" > ./test.list
+          CIRI-long collapse -i ./test.list -o test_collapse -r mm10_chr12.fa -p test -a mm10_chr12.gtf -t 2

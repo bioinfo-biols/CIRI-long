@@ -417,7 +417,6 @@ def correct_cluster(cluster, is_debug=False, max_cluster=200):
 
 
 def batch_cluster_sequence(circ_id, x):
-    from CIRI_long.find_ccs import compress_seq
     sequence = {}
     hpc_freq = []
     for read_id, read_seq in x:
