@@ -14,10 +14,6 @@ def call(args):
     from CIRI_long.find_bsj import scan_ccs_reads, recover_ccs_reads
     from CIRI_long.find_bsj import scan_raw_reads
 
-    lib_path = os.path.dirname(os.path.split(os.path.realpath(__file__))[0]) + '/libs'
-    os.environ['PATH'] = lib_path + ':' + os.environ['PATH']
-    os.chmod(lib_path + '/ccs', 0o755)
-
     if args.input is None or args.output is None:
         sys.exit('Please provide input and output file, run CIRI-long using -h or --help for detailed information.')
     if args.reference is None:
