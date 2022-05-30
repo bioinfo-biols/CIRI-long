@@ -31,6 +31,7 @@ def read(infile):
 
 setup(
     name='CIRI-long',
+    python_requires='>3.7.0',
     version=__version__,
     url='https://github.com/bioinfo-biols/CIRI-long',
     description='circular RNA identification from Nanopore',

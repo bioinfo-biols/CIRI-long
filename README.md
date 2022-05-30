@@ -1,6 +1,5 @@
 ## CIRI-long: circular RNA identifier using long-read sequencing data
-
-[![Build Status](https://travis-ci.com/bioinfo-biols/CIRI-long.svg?branch=master)](https://travis-ci.com/bioinfo-biols/CIRI-long)
+[![Build Status](https://github.com/bioinfo-biols/CIRI-long/actions/workflows/test.yml/badge.svg)](https://github.com/bioinfo-biols/CIRI-long/actions/workflows/test.yml)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/bioinfo-biols/CIRI-long)
 [![The MIT License](https://img.shields.io/badge/license-MIT-orange.svg)](https://github.com/bioinfo-biols/CIRI-long/blob/master/LICENSE)
 ![GitHub All Releases](https://img.shields.io/github/downloads/bioinfo-biols/CIRI-long/total)
@@ -20,6 +19,7 @@ Maintainer: Jinyang Zhang
 
 ### Release Notes
 
+- version 1.1.0: Add convert_bed.py, update pyccs dependency, fixed bugs
 - version 1.0.3: Add output of circRNA isoform usage index, fixed bugs
 - version 1.0.2: Add fast mode for ccs detection and option for user-provided circRNA annotation
 - version 1.0.1: Fixed bug
